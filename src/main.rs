@@ -26,6 +26,9 @@ fn extract_types(filename: &str) -> Result<HashMap<String, serde_gen::Ty>> {
         let head_end_of_line = s.find("\n").unwrap();
         let _tag = &s[4..head_end_of_line];
 
+        let start = s.find("\n").unwrap();
+        s = &s[(start + 1)..];
+
         let end = match s.find("\n---") {
             Some(idx) => idx,
             None => s.len(),
