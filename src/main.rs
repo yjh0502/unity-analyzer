@@ -69,7 +69,6 @@ fn filter_ty(ty: Ty, spec: &FilterSpec) -> Ty {
             let mut matched = true;
             for key in spec.keys.iter() {
                 let key_found = inner.iter().find(|(k, _v)| k == key).is_some();
-                info!("found={:?}", key);
                 if !key_found {
                     matched = false;
                     break;
