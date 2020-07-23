@@ -7,6 +7,8 @@ use std::{
 };
 use stopwatch::Stopwatch;
 
+use rayon::prelude::*;
+
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
 fn extract_types(filename: &str) -> Result<HashMap<String, Ty>> {
@@ -58,7 +60,7 @@ fn extract_types(filename: &str) -> Result<HashMap<String, Ty>> {
         s = &s[end..];
     }
 
-    info!("filename={}, took={}ms", filename, sw.elapsed_ms());
+    debug!("filename={}, took={}ms", filename, sw.elapsed_ms());
 
     Ok(types)
 }
@@ -107,16 +109,25 @@ fn main() -> Result<()> {
 
     let mut all_types = HashMap::<String, Ty>::new();
 
+    let mut files = Vec::new();
     for file in files_list.lines() {
-        let file = file?;
-        let types = match extract_types(&file) {
-            Ok(types) => types,
+        files.push(file?);
+    }
+
+    let sw = Stopwatch::start_new();
+    let types_list = files
+        .into_par_iter()
+        .filter_map(|file| match extract_types(&file) {
+            Ok(types) => Some(types),
             Err(_e) => {
                 log::error!("failed to parse file, filename={}, e={}", file, _e);
-                continue;
+                None
             }
-        };
+        })
+        .collect::<Vec<_>>();
+    info!("type extraction took={}ms", sw.elapsed_ms());
 
+    for types in types_list {
         for (k, ty) in types.into_iter() {
             let prev_ty = match all_types.get(&k) {
                 Some(v) => v.clone(),
