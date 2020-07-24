@@ -200,11 +200,36 @@ fn main() -> Result<()> {
     }
 
     let mut builder = TyBuilder::new();
+    builder.set_any_ty("::serde_yaml::Value");
+
+    let enum_str = {
+        use std::fmt::Write;
+
+        let mut s = String::new();
+
+        write!(
+            s,
+            r#"#[derive(serde_derive::Serialize, serde_derive::Deserialize, Debug, PartialEq, Clone)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub enum Root {{
+"#
+        )?;
+
+        for (k, _ty) in all_types.iter() {
+            write!(s, "    {}({}),\n", k, k)?;
+        }
+        write!(s, "}}")?;
+        s
+    };
+
     for (k, ty) in all_types.into_iter() {
         let out_src = builder.build(&k, ty);
         write!(outfile, "// {}\n", k)?;
         write!(outfile, "{}\n", out_src)?;
     }
+
+    write!(outfile, "{}", enum_str)?;
 
     Ok(())
 }

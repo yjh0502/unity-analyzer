@@ -1,0 +1,10 @@
+[package]
+name = "unity-yaml"
+version = "0.1.0"
+authors = ["Jihyun Yu <yjh0502@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde = "1"
+serde_derive = "1"
+serde_yaml = { path = "../../serde-yaml" }

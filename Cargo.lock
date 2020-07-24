@@ -187,6 +187,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
+name = "gen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "rayon",
+ "serde",
+ "serde-gen",
+ "serde_derive",
+ "serde_yaml",
+ "stopwatch",
+]
+
+[[package]]
 name = "gimli"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -610,18 +625,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7fe0bb3479651439c9112f72b6c505038574c9fbb575ed1bf3b797fa39dd564"
 
 [[package]]
-name = "unityproj"
+name = "unity-yaml"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "env_logger",
- "log",
- "rayon",
  "serde",
- "serde-gen",
  "serde_derive",
  "serde_yaml",
- "stopwatch",
 ]
 
 [[package]]
