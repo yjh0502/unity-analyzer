@@ -3,67 +3,15 @@ use serde_gen::*;
 use std::fs::File;
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, BufWriter, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Write},
 };
 use stopwatch::Stopwatch;
 
 use rayon::prelude::*;
 
+use gen::*;
+
 type Result<T> = std::result::Result<T, anyhow::Error>;
-
-fn extract_types(filename: &str) -> Result<HashMap<String, Ty>> {
-    let sw = Stopwatch::start_new();
-    let file = File::open(&filename)?;
-    let mut file = BufReader::new(file);
-
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
-
-    let mut s = std::str::from_utf8(&mut buf)?;
-    let mut types = HashMap::<String, Ty>::new();
-
-    while !s.is_empty() {
-        let start = s.find("\n---").unwrap();
-        s = &s[(start + 1)..];
-
-        let head_end_of_line = s.find("\n").unwrap();
-        let _tag = &s[4..head_end_of_line];
-
-        let start = s.find("\n").unwrap();
-        s = &s[(start + 1)..];
-
-        let end = match s.find("\n---") {
-            Some(idx) => idx,
-            None => s.len(),
-        };
-
-        // info!("{}", &s[..end]);
-        let parsed: Ty = serde_yaml::from_str(&s[..end])?;
-        let (k, ty) = match parsed {
-            Ty::Map(mut v) => {
-                assert_eq!(v.len(), 1);
-                v.pop().unwrap()
-            }
-            _ => {
-                todo!();
-            }
-        };
-
-        let prev_ty = match types.get(&k) {
-            Some(v) => v.clone(),
-            None => Ty::Unit,
-        };
-
-        let next_ty = prev_ty + ty;
-        types.insert(k, next_ty);
-
-        s = &s[end..];
-    }
-
-    debug!("filename={}, took={}ms", filename, sw.elapsed_ms());
-
-    Ok(types)
-}
 
 fn filter_ty(ty: Ty, spec: &FilterSpec) -> Ty {
     match ty {
