@@ -17,6 +17,14 @@ fn filter_ty(ty: Ty, spec: &FilterSpec) -> Ty {
     match ty {
         Ty::Map(inner) => {
             let mut matched = true;
+            for neg_key in spec.neg_keys.iter() {
+                let key_found = inner.iter().find(|(k, _v)| k == neg_key).is_some();
+                if key_found {
+                    matched = false;
+                    break;
+                }
+            }
+
             for key in spec.keys.iter() {
                 let key_found = inner.iter().find(|(k, _v)| k == key).is_some();
                 if !key_found {
@@ -43,7 +51,25 @@ fn filter_ty(ty: Ty, spec: &FilterSpec) -> Ty {
 
 struct FilterSpec {
     keys: Vec<String>,
+    neg_keys: Vec<String>,
     alt: Ty,
+}
+
+impl FilterSpec {
+    fn new(keys: &[&str], neg_keys: &[&str], alt: &[(&str, Ty)]) -> Self {
+        let keys = keys.iter().map(|k| (*k).to_owned()).collect();
+        let neg_keys = neg_keys.iter().map(|k| (*k).to_owned()).collect();
+        let alt = Ty::Map(
+            alt.iter()
+                .map(|(k, ty)| ((*k).to_owned(), ty.clone()))
+                .collect(),
+        );
+        Self {
+            keys,
+            neg_keys,
+            alt,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -88,57 +114,50 @@ fn main() -> Result<()> {
     }
 
     let specs = &[
-        FilterSpec {
-            keys: vec![
-                "r".to_owned(),
-                "g".to_owned(),
-                "b".to_owned(),
-                "a".to_owned(),
+        FilterSpec::new(
+            &["r", "g", "b", "a"],
+            &["rgba"],
+            &[("r", Ty::F), ("g", Ty::F), ("b", Ty::F), ("a", Ty::F)],
+        ),
+        FilterSpec::new(
+            &["x", "y", "z", "w"],
+            &["curve", "enabled"],
+            &[("x", Ty::F), ("y", Ty::F), ("z", Ty::F), ("w", Ty::F)],
+        ),
+        FilterSpec::new(
+            &["x", "y", "z"],
+            &["curve", "enabled"],
+            &[("x", Ty::F), ("y", Ty::F), ("z", Ty::F)],
+        ),
+        FilterSpec::new(
+            &["x", "y"],
+            &["curve", "enabled"],
+            &[("x", Ty::F), ("y", Ty::F)],
+        ),
+        FilterSpec::new(
+            &["inSlope", "outSlope", "inWeight", "outWeight"],
+            &[],
+            &[
+                ("serializedVersion", Ty::U),
+                ("time", Ty::F),
+                ("value", Ty::Any),
+                ("inSlope", Ty::Any),
+                ("outSlope", Ty::Any),
+                ("tangentMode", Ty::U),
+                ("weightedMode", Ty::Some(Box::new(Ty::U))),
+                ("inWeight", Ty::Some(Box::new(Ty::Any))),
+                ("outWeight", Ty::Some(Box::new(Ty::Any))),
             ],
-            alt: Ty::Map(vec![
-                ("r".to_owned(), Ty::F),
-                ("g".to_owned(), Ty::F),
-                ("b".to_owned(), Ty::F),
-                ("a".to_owned(), Ty::F),
-            ]),
-        },
-        FilterSpec {
-            keys: vec![
-                "x".to_owned(),
-                "y".to_owned(),
-                "z".to_owned(),
-                "w".to_owned(),
+        ),
+        FilterSpec::new(
+            &["fileID"],
+            &["enabled"],
+            &[
+                ("fileID", Ty::Str(String::new())),
+                ("guid", Ty::Some(Box::new(Ty::Str(String::new())))),
+                ("type", Ty::Some(Box::new(Ty::U))),
             ],
-            alt: Ty::Map(vec![
-                ("x".to_owned(), Ty::F),
-                ("y".to_owned(), Ty::F),
-                ("z".to_owned(), Ty::F),
-                ("w".to_owned(), Ty::F),
-            ]),
-        },
-        FilterSpec {
-            keys: vec!["x".to_owned(), "y".to_owned(), "z".to_owned()],
-            alt: Ty::Map(vec![
-                ("x".to_owned(), Ty::F),
-                ("y".to_owned(), Ty::F),
-                ("z".to_owned(), Ty::F),
-            ]),
-        },
-        FilterSpec {
-            keys: vec!["x".to_owned(), "y".to_owned()],
-            alt: Ty::Map(vec![("x".to_owned(), Ty::F), ("y".to_owned(), Ty::F)]),
-        },
-        FilterSpec {
-            keys: vec!["fileID".to_owned()],
-            alt: Ty::Map(vec![
-                ("fileID".to_owned(), Ty::Str(String::new())),
-                (
-                    "guid".to_owned(),
-                    Ty::Some(Box::new(Ty::Str(String::new()))),
-                ),
-                ("type".to_owned(), Ty::Some(Box::new(Ty::U))),
-            ]),
-        },
+        ),
     ];
 
     for (_k, ty) in all_types.iter_mut() {
@@ -149,6 +168,9 @@ fn main() -> Result<()> {
 
     let mut builder = TyBuilder::new();
     builder.set_any_ty("::serde_yaml::Value");
+
+    let mut all_types = all_types.into_iter().collect::<Vec<_>>();
+    all_types.sort_by(|(a, _), (b, _)| a.cmp(b));
 
     let enum_str = {
         use std::fmt::Write;

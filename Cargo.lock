@@ -199,6 +199,7 @@ dependencies = [
  "serde_derive",
  "serde_yaml",
  "stopwatch",
+ "unity-yaml",
 ]
 
 [[package]]
