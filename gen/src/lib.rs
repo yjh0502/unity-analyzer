@@ -66,6 +66,17 @@ impl<'a> Iterator for YamlIter<'a> {
     //
 }
 
+pub fn extract_types_all(filename: &str, tag: &str) -> Result<HashMap<String, Ty>> {
+    let file = File::open(filename)?;
+
+    let parsed: Ty = serde_yaml::from_reader(file)?;
+    info!("parsed={:?}", parsed);
+
+    let mut types = HashMap::<String, Ty>::new();
+    types.insert(tag.to_owned(), parsed);
+    Ok(types)
+}
+
 pub fn extract_types(filename: &str) -> Result<HashMap<String, Ty>> {
     let sw = Stopwatch::start_new();
 

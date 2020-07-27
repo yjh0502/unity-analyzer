@@ -28,7 +28,16 @@ enum SubCommands {
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "type-gen", description = "type-gen")]
-struct CommandTypeGen {}
+struct CommandTypeGen {
+    #[argh(option, description = "delimited")]
+    delimited: bool,
+
+    #[argh(positional)]
+    filename: String,
+
+    #[argh(positional)]
+    out_filename: String,
+}
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "parse", description = "parse")]
@@ -97,22 +106,29 @@ mod typegen {
     }
 }
 
-fn typegen() -> Result<()> {
-    let files_list = gen::files_list("filelist")?;
+fn typegen(cmd: CommandTypeGen) -> Result<()> {
+    let files_list = gen::files_list(&cmd.filename)?;
 
-    let outfile = File::create("out/out.rs")?;
+    let outfile = File::create(&cmd.out_filename)?;
     let mut outfile = BufWriter::new(outfile);
 
     let mut all_types = HashMap::<String, Ty>::new();
 
     let sw = Stopwatch::start_new();
     let types_list = files_list
-        .into_par_iter()
-        .filter_map(|file| match extract_types(&file) {
-            Ok(types) => Some(types),
-            Err(_e) => {
-                log::error!("failed to parse file, filename={}, e={}", file, _e);
-                None
+        .into_iter()
+        .filter_map(|file| {
+            let res = if cmd.delimited {
+                extract_types(&file)
+            } else {
+                extract_types_all(&file, "Root")
+            };
+            match res {
+                Ok(types) => Some(types),
+                Err(_e) => {
+                    log::error!("failed to parse file, filename={}, e={}", file, _e);
+                    None
+                }
             }
         })
         .collect::<Vec<_>>();
@@ -218,7 +234,9 @@ pub enum Root {{
         write!(outfile, "{}\n", out_src)?;
     }
 
-    write!(outfile, "{}", enum_str)?;
+    if cmd.delimited {
+        write!(outfile, "{}", enum_str)?;
+    }
 
     Ok(())
 }
@@ -255,7 +273,7 @@ fn main() -> Result<()> {
     let args: TopLevel = argh::from_env();
 
     match args.nested {
-        SubCommands::TypeGen(_) => typegen(),
+        SubCommands::TypeGen(v) => typegen(v),
         SubCommands::Parse(_) => parse(),
     }
 }
