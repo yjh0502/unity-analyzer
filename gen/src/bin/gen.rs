@@ -98,7 +98,7 @@ mod typegen {
 }
 
 fn typegen() -> Result<()> {
-    let files_list = gen::files_list("files_list")?;
+    let files_list = gen::files_list("filelist")?;
 
     let outfile = File::create("out/out.rs")?;
     let mut outfile = BufWriter::new(outfile);
@@ -224,7 +224,29 @@ pub enum Root {{
 }
 
 fn parse() -> Result<()> {
-    todo!();
+    let files_list = gen::files_list("filelist")?;
+    let sw = Stopwatch::start_new();
+
+    files_list
+        .into_par_iter()
+        .map(|file| -> Result<()> {
+            debug!("file={}", file);
+
+            let buf = gen::YamlBuf::from_filename(&file)?;
+            for res in buf.iter() {
+                let (_key, body) = res?;
+                let _parsed = serde_yaml::from_str::<serde_yaml::Value>(body);
+                if let Err(e) = _parsed {
+                    error!("filename={}\ncontent={}\nerr={}", file, body, e);
+                }
+                //info!("parsed: {:?}", parsed);
+            }
+            Ok(())
+        })
+        .collect::<Vec<_>>();
+
+    eprintln!("took={}ms", sw.elapsed_ms());
+    Ok(())
 }
 
 fn main() -> Result<()> {

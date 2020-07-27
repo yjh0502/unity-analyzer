@@ -6,7 +6,7 @@ type Result<T> = std::result::Result<T, anyhow::Error>;
 fn main() -> Result<()> {
     env_logger::init();
 
-    let files_list = gen::files_list("files_list")?;
+    let files_list = gen::files_list("filelist")?;
     let sw = Stopwatch::start_new();
 
     files_list
