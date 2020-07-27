@@ -6,7 +6,7 @@ use serde_gen::*;
 use std::fs::File;
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufWriter, Write},
 };
 use stopwatch::Stopwatch;
 
@@ -98,11 +98,7 @@ mod typegen {
 }
 
 fn typegen() -> Result<()> {
-    let files_list = BufReader::new(File::open("filelist")?);
-    let files_list = files_list
-        .lines()
-        .map(|v| v.map(|v| v.to_owned()))
-        .collect::<std::io::Result<Vec<String>>>()?;
+    let files_list = gen::files_list("files_list")?;
 
     let outfile = File::create("out/out.rs")?;
     let mut outfile = BufWriter::new(outfile);
@@ -227,6 +223,10 @@ pub enum Root {{
     Ok(())
 }
 
+fn parse() -> Result<()> {
+    todo!();
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -234,8 +234,6 @@ fn main() -> Result<()> {
 
     match args.nested {
         SubCommands::TypeGen(_) => typegen(),
-        SubCommands::Parse(_) => {
-            todo!();
-        }
+        SubCommands::Parse(_) => parse(),
     }
 }

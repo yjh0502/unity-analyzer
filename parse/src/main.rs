@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-
 use log::*;
 use rayon::prelude::*;
 use stopwatch::Stopwatch;
@@ -9,12 +6,7 @@ type Result<T> = std::result::Result<T, anyhow::Error>;
 fn main() -> Result<()> {
     env_logger::init();
 
-    let files_list = BufReader::new(File::open("filelist")?);
-    let files_list = files_list
-        .lines()
-        .map(|v| v.map(|v| v.to_owned()))
-        .collect::<std::io::Result<Vec<String>>>()?;
-
+    let files_list = gen::files_list("files_list")?;
     let sw = Stopwatch::start_new();
 
     files_list

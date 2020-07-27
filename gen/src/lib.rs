@@ -3,7 +3,7 @@ use serde_gen::*;
 use std::fs::File;
 use std::{
     collections::HashMap,
-    io::{BufReader, Read},
+    io::{BufRead, BufReader, Read},
 };
 use stopwatch::Stopwatch;
 
@@ -98,4 +98,14 @@ pub fn extract_types(filename: &str) -> Result<HashMap<String, Ty>> {
     debug!("filename={}, took={}ms", filename, sw.elapsed_ms());
 
     Ok(types)
+}
+
+// helpers
+pub fn files_list(filename: &str) -> Result<Vec<String>> {
+    let files_list = BufReader::new(File::open(filename)?);
+    let files_list = files_list
+        .lines()
+        .map(|v| v.map(|v| v.to_owned()))
+        .collect::<std::io::Result<Vec<String>>>()?;
+    Ok(files_list)
 }
