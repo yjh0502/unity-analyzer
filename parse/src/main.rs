@@ -27,7 +27,7 @@ fn main() -> Result<()> {
                 let (_key, body) = res?;
                 let _parsed = unity_yaml::Root::from_str(body);
                 if let Err(e) = _parsed {
-                    error!("filename={}\n{}\nerr={}", file, body, e);
+                    error!("filename={}\ncontent={}\nerr={}", file, body, e);
                 }
                 //info!("parsed: {:?}", parsed);
             }

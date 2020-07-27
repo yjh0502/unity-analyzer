@@ -1,4 +1,7 @@
+use argh::FromArgs;
+use gen::*;
 use log::*;
+use rayon::prelude::*;
 use serde_gen::*;
 use std::fs::File;
 use std::{
@@ -7,89 +10,107 @@ use std::{
 };
 use stopwatch::Stopwatch;
 
-use rayon::prelude::*;
-
-use gen::*;
-
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
-fn filter_ty(ty: Ty, spec: &FilterSpec) -> Ty {
-    match ty {
-        Ty::Map(inner) => {
-            let mut matched = true;
-            for neg_key in spec.neg_keys.iter() {
-                let key_found = inner.iter().find(|(k, _v)| k == neg_key).is_some();
-                if key_found {
-                    matched = false;
-                    break;
+#[derive(FromArgs, Debug)]
+#[argh(description = "top level")]
+struct TopLevel {
+    #[argh(subcommand)]
+    nested: SubCommands,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand)]
+enum SubCommands {
+    TypeGen(CommandTypeGen),
+    Parse(CommandParse),
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "type-gen", description = "type-gen")]
+struct CommandTypeGen {}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "parse", description = "parse")]
+struct CommandParse {}
+
+mod typegen {
+    use super::*;
+
+    pub fn filter_ty(ty: Ty, spec: &FilterSpec) -> Ty {
+        match ty {
+            Ty::Map(inner) => {
+                let mut matched = true;
+                for neg_key in spec.neg_keys.iter() {
+                    let key_found = inner.iter().find(|(k, _v)| k == neg_key).is_some();
+                    if key_found {
+                        matched = false;
+                        break;
+                    }
+                }
+
+                for key in spec.keys.iter() {
+                    let key_found = inner.iter().find(|(k, _v)| k == key).is_some();
+                    if !key_found {
+                        matched = false;
+                        break;
+                    }
+                }
+
+                if !matched {
+                    let inner = inner
+                        .into_iter()
+                        .map(|(k, v)| (k, filter_ty(v, spec)))
+                        .collect();
+                    Ty::Map(inner)
+                } else {
+                    spec.alt.clone()
                 }
             }
+            Ty::Seq(inner) => Ty::Seq(Box::new(filter_ty(*inner, spec))),
+            Ty::Some(inner) => Ty::Some(Box::new(filter_ty(*inner, spec))),
+            other => other,
+        }
+    }
 
-            for key in spec.keys.iter() {
-                let key_found = inner.iter().find(|(k, _v)| k == key).is_some();
-                if !key_found {
-                    matched = false;
-                    break;
-                }
-            }
+    pub struct FilterSpec {
+        pub keys: Vec<String>,
+        pub neg_keys: Vec<String>,
+        pub alt: Ty,
+    }
 
-            if !matched {
-                let inner = inner
-                    .into_iter()
-                    .map(|(k, v)| (k, filter_ty(v, spec)))
-                    .collect();
-                Ty::Map(inner)
-            } else {
-                spec.alt.clone()
+    impl FilterSpec {
+        pub fn new(keys: &[&str], neg_keys: &[&str], alt: &[(&str, Ty)]) -> Self {
+            let keys = keys.iter().map(|k| (*k).to_owned()).collect();
+            let neg_keys = neg_keys.iter().map(|k| (*k).to_owned()).collect();
+            let alt = Ty::Map(
+                alt.iter()
+                    .map(|(k, ty)| ((*k).to_owned(), ty.clone()))
+                    .collect(),
+            );
+            Self {
+                keys,
+                neg_keys,
+                alt,
             }
         }
-        Ty::Seq(inner) => Ty::Seq(Box::new(filter_ty(*inner, spec))),
-        Ty::Some(inner) => Ty::Some(Box::new(filter_ty(*inner, spec))),
-        other => other,
     }
 }
 
-struct FilterSpec {
-    keys: Vec<String>,
-    neg_keys: Vec<String>,
-    alt: Ty,
-}
-
-impl FilterSpec {
-    fn new(keys: &[&str], neg_keys: &[&str], alt: &[(&str, Ty)]) -> Self {
-        let keys = keys.iter().map(|k| (*k).to_owned()).collect();
-        let neg_keys = neg_keys.iter().map(|k| (*k).to_owned()).collect();
-        let alt = Ty::Map(
-            alt.iter()
-                .map(|(k, ty)| ((*k).to_owned(), ty.clone()))
-                .collect(),
-        );
-        Self {
-            keys,
-            neg_keys,
-            alt,
-        }
-    }
-}
-
-fn main() -> Result<()> {
-    env_logger::init();
-
-    let files_list = File::open("filelist")?;
-    let files_list = BufReader::new(files_list);
+fn typegen() -> Result<()> {
+    let files_list = BufReader::new(File::open("filelist")?);
+    let files_list = files_list
+        .lines()
+        .map(|v| v.map(|v| v.to_owned()))
+        .collect::<std::io::Result<Vec<String>>>()?;
 
     let outfile = File::create("out/out.rs")?;
     let mut outfile = BufWriter::new(outfile);
 
     let mut all_types = HashMap::<String, Ty>::new();
 
-    let mut files = Vec::new();
-    for file in files_list.lines() {
-        files.push(file?);
-    }
-
     let sw = Stopwatch::start_new();
-    let types_list = files
+    let types_list = files_list
         .into_par_iter()
         .filter_map(|file| match extract_types(&file) {
             Ok(types) => Some(types),
@@ -112,6 +133,8 @@ fn main() -> Result<()> {
             all_types.insert(k, next_ty);
         }
     }
+
+    use typegen::*;
 
     let specs = &[
         FilterSpec::new(
@@ -202,4 +225,17 @@ pub enum Root {{
     write!(outfile, "{}", enum_str)?;
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    env_logger::init();
+
+    let args: TopLevel = argh::from_env();
+
+    match args.nested {
+        SubCommands::TypeGen(_) => typegen(),
+        SubCommands::Parse(_) => {
+            todo!();
+        }
+    }
 }

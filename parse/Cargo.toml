@@ -1,5 +1,5 @@
 [package]
-name = "gen"
+name = "parse"
 version = "0.1.0"
 authors = ["Jihyun Yu <yjh0502@gmail.com>"]
 edition = "2018"
@@ -8,7 +8,6 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.31"
-argh = "0.1"
 env_logger = "0.7.1"
 log = "0.4.11"
 rayon = "1.3.1"
@@ -18,3 +17,4 @@ serde-gen = { path = "../../serde-gen" }
 serde_yaml = { path = "../../serde-yaml" }
 stopwatch = "0.0.7"
 unity-yaml = { path = "../unity-yaml" }
+gen = { path = "../gen" }
