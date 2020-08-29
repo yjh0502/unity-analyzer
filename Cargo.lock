@@ -591,6 +591,7 @@ checksum = "e54c9a88f2da7238af84b5101443f0c0d0a3bbdc455e34a5c9497b1903ed55d5"
 [[package]]
 name = "serde-gen"
 version = "0.1.0"
+source = "git+https://github.com/yjh0502/serde-gen#2bdebc689c060cfebb6b96b9ad6317380493db63"
 dependencies = [
  "clap",
  "error-chain",

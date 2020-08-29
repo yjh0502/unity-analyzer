@@ -1,8 +1,8 @@
 [workspace]
 members = [
+    "gen",
     "parse",
     "unity-yaml",
-    "gen",
 ]
 
 [profile.release]
