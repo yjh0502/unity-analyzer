@@ -237,9 +237,9 @@ impl AssetFile {
 #[derive(Debug)]
 pub struct ObjectHeader {
     /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
-    pub object_id: usize,
+    pub object_id: u64,
     /// fileID
-    pub file_id: usize,
+    pub file_id: i64,
 }
 
 impl ObjectHeader {
@@ -252,7 +252,7 @@ impl ObjectHeader {
         let mut split = s.split(" ");
 
         let object_id = match split.next() {
-            Some(s) => s.parse::<usize>()?,
+            Some(s) => s.parse::<u64>()?,
             None => bail!("unknown header"),
         };
 
@@ -261,7 +261,7 @@ impl ObjectHeader {
                 if !s.starts_with("&") {
                     bail!("unknown header");
                 }
-                (&s[1..]).parse::<usize>()?
+                (&s[1..]).parse::<i64>()?
             }
             None => bail!("unknown header"),
         };
