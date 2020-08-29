@@ -268,7 +268,10 @@ impl AssetIndex {
         let mut forward_refs = Vec::new();
         let mut num_objects = 0;
         for (_path, asset) in assets.iter() {
-            let guid = asset.guid.clone().unwrap_or(String::new());
+            let guid = match &asset.meta {
+                Some(meta) => meta.guid.clone(),
+                None => String::new(),
+            };
 
             num_objects += asset.objects.len();
 
@@ -347,7 +350,7 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
             }
         }
 
-        return Some((path, AssetFile::from_meta(meta.guid)));
+        return Some((path, AssetFile::from_meta(meta)));
     }
 
     match AssetFile::from_path(&path) {
@@ -363,7 +366,7 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
 
             match FileInfo::from_path(&meta_file) {
                 Ok(meta) => {
-                    parsed.guid = Some(meta.guid);
+                    parsed.meta = Some(meta);
                 }
                 Err(_e) => {
                     error!(
@@ -443,8 +446,12 @@ fn parse(v: CommandParse) -> Result<()> {
 
         let mut danglings = Vec::new();
         for (path, asset) in &_idx.assets {
-            if let Some(guid) = &asset.guid {
-                if !visited.contains(guid) {
+            if let Some(meta) = &asset.meta {
+                if meta.asset_bundle_name().is_some() {
+                    continue;
+                }
+
+                if !visited.contains(&meta.guid) {
                     danglings.push(path.clone());
                 }
             }

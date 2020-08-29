@@ -133,9 +133,19 @@ pub struct Reference {
 }
 
 /// 파일에 대한 정보(meta). 파일은 경로와 guid를 가지고 있습니다.
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
 pub struct FileInfo {
     pub guid: String,
+    pub NativeFormatImporter: Option<NativeFormatImporter>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+#[allow(non_camel_case_types)]
+pub struct NativeFormatImporter {
+    pub assetBundleName: Option<String>,
 }
 
 impl FileInfo {
@@ -143,6 +153,11 @@ impl FileInfo {
         let content = std::fs::read_to_string(path)?;
         let parsed = serde_yaml::from_str(&content)?;
         Ok(parsed)
+    }
+
+    pub fn asset_bundle_name(&self) -> Option<&str> {
+        let importer = self.NativeFormatImporter.as_ref()?;
+        importer.assetBundleName.as_ref().map(|s| s.as_str())
     }
 }
 
@@ -194,14 +209,14 @@ fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result
 
 #[derive(Debug)]
 pub struct AssetFile {
-    pub guid: Option<String>,
+    pub meta: Option<FileInfo>,
     pub objects: Vec<Object>,
 }
 
 impl AssetFile {
-    pub fn from_meta(guid: String) -> Self {
+    pub fn from_meta(meta: FileInfo) -> Self {
         Self {
-            guid: Some(guid),
+            meta: Some(meta),
             objects: Vec::new(),
         }
     }
@@ -226,7 +241,7 @@ impl AssetFile {
         }
 
         Ok(Self {
-            guid: None,
+            meta: None,
             objects,
         })
     }
