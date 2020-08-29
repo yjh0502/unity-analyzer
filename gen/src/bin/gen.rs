@@ -3,7 +3,6 @@ use argh::FromArgs;
 use gen::*;
 use log::*;
 use rayon::prelude::*;
-use serde_derive::Deserialize;
 use serde_gen::*;
 use std::fs::File;
 use std::{
@@ -255,93 +254,121 @@ pub enum Root {{
     Ok(())
 }
 
-/// 파일에 대한 정보(meta). 파일은 경로와 guid를 가지고 있습니다.
-#[derive(Deserialize)]
-struct FileInfo {
-    guid: String,
-}
-
-/// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
-/// 내부에서 object tree 구조를 가지고 있습니다.
-#[derive(Debug)]
-struct ObjectHeader {
-    /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
-    object_id: usize,
-    /// fileID
-    file_id: usize,
-}
-
 fn parse_meta_file<P: AsRef<Path>>(path: P) -> Result<FileInfo> {
     let content = std::fs::read_to_string(path)?;
     let parsed = serde_yaml::from_str(&content)?;
     Ok(parsed)
 }
 
-fn parse_header(s: &str) -> Result<ObjectHeader> {
-    if !s.starts_with("!u!") {
-        bail!("unknown header");
-    }
-    let s = &s[3..];
-    let mut split = s.split(" ");
+fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result<()> {
+    use serde_yaml::Value::*;
 
-    let object_id = match split.next() {
-        Some(s) => s.parse::<usize>()?,
-        None => bail!("unknown header"),
-    };
-
-    let file_id = match split.next() {
-        Some(s) => {
-            if !s.starts_with("&") {
-                bail!("unknown header");
+    match node {
+        Mapping(v) => {
+            let mut file_id = None;
+            let mut guid = None;
+            for (k, v) in v.iter() {
+                if let String(key) = k {
+                    if key == "fileID" {
+                        file_id = Some(v);
+                    } else if key == "guid" {
+                        guid = Some(v);
+                    }
+                }
+                find_references(v, out)?;
             }
-            (&s[1..]).parse::<usize>()?
-        }
-        None => bail!("unknown header"),
-    };
 
-    Ok(ObjectHeader { object_id, file_id })
+            if let Some(file_id) = file_id {
+                if let Some(file_id) = file_id.as_u64() {
+                    out.push(Reference {
+                        file_id: file_id as usize,
+                        guid: guid.and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                    });
+                }
+            }
+        }
+        Sequence(v) => {
+            for item in v.iter() {
+                find_references(item, out)?;
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
 }
 
-fn parse_object_file<P: AsRef<Path>>(path: P) -> Result<Vec<ObjectHeader>> {
+fn parse_object(header: ObjectHeader, body: &str) -> Result<Object> {
+    let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
+    let mut references = Vec::new();
+    find_references(&parsed, &mut references)?;
+
+    Ok(Object { header, references })
+}
+
+fn parse_asset_file<P: AsRef<Path>>(path: P) -> Result<AssetFile> {
+    let mut objects = Vec::new();
+
     let path = path.as_ref();
     let buf = gen::YamlBuf::from_filename(path)?;
     for res in buf.iter() {
         let (_key, body) = res?;
-        let header = parse_header(_key)?;
-        debug!("file={}, header={:?}", path.display(), header);
-        let _parsed = serde_yaml::from_str::<serde_yaml::Value>(body);
-        if let Err(e) = _parsed {
-            error!("filename={}\ncontent={}\nerr={}", path.display(), body, e);
-        }
-        //info!("parsed: {:?}", parsed);
+        let header = match ObjectHeader::from_str(_key) {
+            Ok(header) => header,
+            Err(_e) => {
+                error!("failed to parse header, \"{}\"", _key);
+                return Err(_e);
+            }
+        };
+
+        let obj = parse_object(header, body)?;
+        objects.push(obj);
     }
 
-    Ok(vec![])
+    Ok(AssetFile {
+        guid: None,
+        objects,
+    })
 }
 
 fn parse(v: CommandParse) -> Result<()> {
-    let files_list = list_files0(&v.dir)?;
+    let files_list = list_files0(&v.dir, false)?;
     let sw = Stopwatch::start_new();
 
-    let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
+    // let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
 
     files_list
-        .into_par_iter()
-        .map(|file| -> Result<()> {
+        .into_iter()
+        .filter_map(|file| -> Option<AssetFile> {
             debug!("file={}", file.display());
 
-            if let Some(ext) = file.extension() {
-                if ext == "meta" {
-                    let parsed = parse_meta_file(&file)?;
-                    debug!("guid={}", parsed.guid);
-                    return Ok(());
+            match parse_asset_file(&file) {
+                Err(e) => {
+                    error!("failed to parse file: {:?}", e);
+                    None
+                }
+                Ok(mut parsed) => {
+                    let mut filename = std::ffi::OsString::from(file.file_name().unwrap());
+                    filename.push(".meta");
+                    let mut meta_file = PathBuf::from(&file);
+                    meta_file.set_file_name(filename);
+
+                    match parse_meta_file(&meta_file) {
+                        Ok(meta) => {
+                            parsed.guid = Some(meta.guid);
+                        }
+                        Err(_e) => {
+                            error!(
+                                "failed to parse a meta file for file={}, {}",
+                                file.display(),
+                                _e
+                            );
+                        }
+                    }
+
+                    Some(parsed)
                 }
             }
-
-            if let Err(e) = parse_object_file(&file) {
-                error!("failed to parse file: {:?}", e);
-            }
-            Ok(())
         })
         .collect::<Vec<_>>();
 
@@ -363,7 +390,7 @@ fn check_yaml<P: AsRef<Path>>(path: P) -> Result<bool> {
     Ok(buf.as_slice() == header)
 }
 
-fn list_files0<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
+fn list_files0<P: AsRef<Path>>(dir: P, include_meta: bool) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
 
     use walkdir::WalkDir;
@@ -380,6 +407,9 @@ fn list_files0<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
 
         if let Some(ext) = path.extension() {
             if ext == "meta" {
+                if !include_meta {
+                    continue;
+                }
                 accepted = true;
             }
         }
@@ -399,7 +429,7 @@ fn list_files0<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
 }
 
 fn list_files(v: CommandListFiles) -> Result<()> {
-    let path_list = list_files0(&v.dir)?;
+    let path_list = list_files0(&v.dir, true)?;
 
     for path in path_list {
         println!("{}", path.display());

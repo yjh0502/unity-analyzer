@@ -1,4 +1,6 @@
+use anyhow::bail;
 use log::*;
+use serde_derive::Deserialize;
 use serde_gen::*;
 use std::fs::File;
 use std::{
@@ -119,4 +121,79 @@ pub fn files_list(filename: &str) -> Result<Vec<String>> {
         .map(|v| v.map(|v| v.to_owned()))
         .collect::<std::io::Result<Vec<String>>>()?;
     Ok(files_list)
+}
+
+/// 다른 파일로의 reference.
+#[derive(Debug)]
+pub struct Reference {
+    pub file_id: usize,
+    /// guid가 없는 경우는 local reference, 있는 경우는 remote reference
+    pub guid: Option<String>,
+}
+
+/// 파일에 대한 정보(meta). 파일은 경로와 guid를 가지고 있습니다.
+#[derive(Deserialize)]
+pub struct FileInfo {
+    pub guid: String,
+}
+
+#[derive(Debug)]
+pub struct AssetFile {
+    pub guid: Option<String>,
+    pub objects: Vec<Object>,
+}
+
+/// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
+/// 내부에서 object tree 구조를 가지고 있습니다.
+#[derive(Debug)]
+pub struct ObjectHeader {
+    /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
+    pub object_id: usize,
+    /// fileID
+    pub file_id: usize,
+}
+
+impl ObjectHeader {
+    pub fn from_str(s: &str) -> Result<Self> {
+        let s = s.trim();
+        if !s.starts_with("!u!") {
+            bail!("unknown header");
+        }
+        let s = &s[3..];
+        let mut split = s.split(" ");
+
+        let object_id = match split.next() {
+            Some(s) => s.parse::<usize>()?,
+            None => bail!("unknown header"),
+        };
+
+        let file_id = match split.next() {
+            Some(s) => {
+                if !s.starts_with("&") {
+                    bail!("unknown header");
+                }
+                (&s[1..]).parse::<usize>()?
+            }
+            None => bail!("unknown header"),
+        };
+
+        Ok(ObjectHeader { object_id, file_id })
+    }
+}
+
+/// object 정보. 의존성 분석을 위한거라, reference 정보만 담고 있습니다.
+#[derive(Debug)]
+pub struct Object {
+    pub header: ObjectHeader,
+    pub references: Vec<Reference>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_header() {
+        ObjectHeader::from_str("!u!29 &1").expect("failed to parse");
+    }
 }
