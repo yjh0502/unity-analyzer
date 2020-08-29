@@ -7,7 +7,7 @@ use std::fs::File;
 use std::{
     collections::HashMap,
     io::{BufWriter, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 use stopwatch::Stopwatch;
 
@@ -290,10 +290,12 @@ fn check_yaml<P: AsRef<Path>>(path: P) -> Result<bool> {
     Ok(buf.as_slice() == header)
 }
 
-fn list_files(v: CommandListFiles) -> Result<()> {
+fn list_files0<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+
     use walkdir::WalkDir;
 
-    for entry in WalkDir::new(&v.dir) {
+    for entry in WalkDir::new(&dir) {
         let entry = entry?;
         if entry.metadata()?.is_dir() {
             continue;
@@ -317,11 +319,20 @@ fn list_files(v: CommandListFiles) -> Result<()> {
             continue;
         }
 
+        out.push(path.into());
+    }
+
+    Ok(out)
+}
+
+fn list_files(v: CommandListFiles) -> Result<()> {
+    let path_list = list_files0(&v.dir)?;
+
+    for path in path_list {
         println!("{}", path.display());
     }
 
     Ok(())
-    //
 }
 
 fn main() -> Result<()> {
