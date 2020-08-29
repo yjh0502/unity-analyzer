@@ -384,6 +384,7 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
 
 fn parse(v: CommandParse) -> Result<()> {
     let assets_dir = Path::join(&v.dir, "Assets");
+    let resources_dir = Path::join(&v.dir, "Assets/Resources");
 
     let files_list = list_files0(&assets_dir)?;
     let meta_files_list = list_meta_files(&assets_dir)?;
@@ -406,19 +407,26 @@ fn parse(v: CommandParse) -> Result<()> {
         }
     }
 
-    let _idx = AssetIndex::new(assets);
+    let idx = AssetIndex::new(assets);
 
     {
         let mut visited = HashSet::new();
         let mut queue = Vec::new();
 
-        {
-            for asset in _idx.assets.values() {
-                if let Some(meta) = &asset.meta {
-                    if meta.asset_bundle_name().is_some() {
-                        if let Some(guid) = asset.guid() {
-                            queue.push(guid);
-                        }
+        for (path, asset) in &idx.assets {
+            // handle resources (run-time loadable assets)
+            if path.starts_with(&resources_dir) {
+                if let Some(guid) = asset.guid() {
+                    queue.push(guid);
+                }
+                continue;
+            }
+
+            if let Some(meta) = &asset.meta {
+                // mark all asset bundles dirty
+                if meta.asset_bundle_name().is_some() {
+                    if let Some(guid) = asset.guid() {
+                        queue.push(guid);
                     }
                 }
             }
@@ -445,7 +453,7 @@ fn parse(v: CommandParse) -> Result<()> {
         while let Some(item) = queue.pop() {
             visited.insert(item.clone());
 
-            for (_, dst) in _idx.forward_refs(item) {
+            for (_, dst) in idx.forward_refs(item) {
                 if visited.contains(dst) {
                     continue;
                 }
@@ -454,10 +462,10 @@ fn parse(v: CommandParse) -> Result<()> {
             }
         }
 
-        eprintln!("total={}, visited={}", _idx.assets.len(), visited.len());
+        eprintln!("total={}, visited={}", idx.assets.len(), visited.len());
 
         let mut danglings = Vec::new();
-        for (path, asset) in &_idx.assets {
+        for (path, asset) in &idx.assets {
             if let Some(meta) = &asset.meta {
                 if !visited.contains(&meta.guid) {
                     danglings.push(path.clone());
