@@ -1,3 +1,4 @@
+use anyhow::bail;
 use argh::FromArgs;
 use gen::*;
 use log::*;
@@ -262,7 +263,8 @@ struct FileInfo {
 
 /// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
 /// 내부에서 object tree 구조를 가지고 있습니다.
-struct GraphNode {
+#[derive(Debug)]
+struct ObjectHeader {
     /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
     object_id: usize,
     /// fileID
@@ -275,9 +277,53 @@ fn parse_meta_file<P: AsRef<Path>>(path: P) -> Result<FileInfo> {
     Ok(parsed)
 }
 
+fn parse_header(s: &str) -> Result<ObjectHeader> {
+    if !s.starts_with("!u!") {
+        bail!("unknown header");
+    }
+    let s = &s[3..];
+    let mut split = s.split(" ");
+
+    let object_id = match split.next() {
+        Some(s) => s.parse::<usize>()?,
+        None => bail!("unknown header"),
+    };
+
+    let file_id = match split.next() {
+        Some(s) => {
+            if !s.starts_with("&") {
+                bail!("unknown header");
+            }
+            (&s[1..]).parse::<usize>()?
+        }
+        None => bail!("unknown header"),
+    };
+
+    Ok(ObjectHeader { object_id, file_id })
+}
+
+fn parse_object_file<P: AsRef<Path>>(path: P) -> Result<Vec<ObjectHeader>> {
+    let path = path.as_ref();
+    let buf = gen::YamlBuf::from_filename(path)?;
+    for res in buf.iter() {
+        let (_key, body) = res?;
+        let header = parse_header(_key)?;
+        debug!("file={}, header={:?}", path.display(), header);
+        let _parsed = serde_yaml::from_str::<serde_yaml::Value>(body);
+        if let Err(e) = _parsed {
+            error!("filename={}\ncontent={}\nerr={}", path.display(), body, e);
+        }
+        //info!("parsed: {:?}", parsed);
+    }
+
+    Ok(vec![])
+}
+
 fn parse(v: CommandParse) -> Result<()> {
     let files_list = list_files0(&v.dir)?;
     let sw = Stopwatch::start_new();
+
+    let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
 
     files_list
         .into_par_iter()
@@ -292,14 +338,8 @@ fn parse(v: CommandParse) -> Result<()> {
                 }
             }
 
-            let buf = gen::YamlBuf::from_filename(&file)?;
-            for res in buf.iter() {
-                let (_key, body) = res?;
-                let _parsed = serde_yaml::from_str::<serde_yaml::Value>(body);
-                if let Err(e) = _parsed {
-                    error!("filename={}\ncontent={}\nerr={}", file.display(), body, e);
-                }
-                //info!("parsed: {:?}", parsed);
+            if let Err(e) = parse_object_file(&file) {
+                error!("failed to parse file: {:?}", e);
             }
             Ok(())
         })
