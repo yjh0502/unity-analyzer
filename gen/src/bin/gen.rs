@@ -278,13 +278,12 @@ impl AssetIndex {
             .collect::<HashMap<_, _>>();
 
         // add other assets
-        for meta_path in meta_files_list {
-            if let Some((path, asset)) = try_parse_path(meta_path) {
-                if !assets.contains_key(&path) {
-                    assets.insert(path, asset);
-                }
-            }
-        }
+        meta_files_list
+            .into_iter()
+            .filter_map(try_parse_path)
+            .for_each(|(path, asset)| {
+                assets.entry(path).or_insert(asset);
+            });
 
         // tracking file-level intra-dependencies
         let mut forward_refs = Vec::new();
