@@ -6,6 +6,7 @@ use std::fs::File;
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
+    path::Path,
 };
 use stopwatch::Stopwatch;
 
@@ -137,10 +138,91 @@ pub struct FileInfo {
     pub guid: String,
 }
 
+impl FileInfo {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        let parsed = serde_yaml::from_str(&content)?;
+        Ok(parsed)
+    }
+}
+
+fn parse_object(header: ObjectHeader, body: &str) -> Result<Object> {
+    let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
+    let mut references = Vec::new();
+    find_references(&parsed, &mut references)?;
+
+    Ok(Object { header, references })
+}
+
+fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result<()> {
+    use serde_yaml::Value::*;
+
+    match node {
+        Mapping(v) => {
+            let mut file_id = None;
+            let mut guid = None;
+            for (k, v) in v.iter() {
+                if let String(key) = k {
+                    if key == "fileID" {
+                        file_id = Some(v);
+                    } else if key == "guid" {
+                        guid = Some(v);
+                    }
+                }
+                find_references(v, out)?;
+            }
+
+            if let Some(file_id) = file_id {
+                if let Some(file_id) = file_id.as_u64() {
+                    out.push(Reference {
+                        file_id: file_id as usize,
+                        guid: guid.and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                    });
+                }
+            }
+        }
+        Sequence(v) => {
+            for item in v.iter() {
+                find_references(item, out)?;
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct AssetFile {
     pub guid: Option<String>,
     pub objects: Vec<Object>,
+}
+
+impl AssetFile {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let mut objects = Vec::new();
+
+        let path = path.as_ref();
+        let buf = YamlBuf::from_filename(path)?;
+        for res in buf.iter() {
+            let (_key, body) = res?;
+            let header = match ObjectHeader::from_str(_key) {
+                Ok(header) => header,
+                Err(_e) => {
+                    error!("failed to parse header, \"{}\"", _key);
+                    return Err(_e);
+                }
+            };
+
+            let obj = parse_object(header, body)?;
+            objects.push(obj);
+        }
+
+        Ok(Self {
+            guid: None,
+            objects,
+        })
+    }
 }
 
 /// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.

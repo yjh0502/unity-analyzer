@@ -1,4 +1,3 @@
-use anyhow::bail;
 use argh::FromArgs;
 use gen::*;
 use log::*;
@@ -254,95 +253,18 @@ pub enum Root {{
     Ok(())
 }
 
-fn parse_meta_file<P: AsRef<Path>>(path: P) -> Result<FileInfo> {
-    let content = std::fs::read_to_string(path)?;
-    let parsed = serde_yaml::from_str(&content)?;
-    Ok(parsed)
-}
-
-fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result<()> {
-    use serde_yaml::Value::*;
-
-    match node {
-        Mapping(v) => {
-            let mut file_id = None;
-            let mut guid = None;
-            for (k, v) in v.iter() {
-                if let String(key) = k {
-                    if key == "fileID" {
-                        file_id = Some(v);
-                    } else if key == "guid" {
-                        guid = Some(v);
-                    }
-                }
-                find_references(v, out)?;
-            }
-
-            if let Some(file_id) = file_id {
-                if let Some(file_id) = file_id.as_u64() {
-                    out.push(Reference {
-                        file_id: file_id as usize,
-                        guid: guid.and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                    });
-                }
-            }
-        }
-        Sequence(v) => {
-            for item in v.iter() {
-                find_references(item, out)?;
-            }
-        }
-        _ => {}
-    }
-
-    Ok(())
-}
-
-fn parse_object(header: ObjectHeader, body: &str) -> Result<Object> {
-    let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
-    let mut references = Vec::new();
-    find_references(&parsed, &mut references)?;
-
-    Ok(Object { header, references })
-}
-
-fn parse_asset_file<P: AsRef<Path>>(path: P) -> Result<AssetFile> {
-    let mut objects = Vec::new();
-
-    let path = path.as_ref();
-    let buf = gen::YamlBuf::from_filename(path)?;
-    for res in buf.iter() {
-        let (_key, body) = res?;
-        let header = match ObjectHeader::from_str(_key) {
-            Ok(header) => header,
-            Err(_e) => {
-                error!("failed to parse header, \"{}\"", _key);
-                return Err(_e);
-            }
-        };
-
-        let obj = parse_object(header, body)?;
-        objects.push(obj);
-    }
-
-    Ok(AssetFile {
-        guid: None,
-        objects,
-    })
-}
-
 fn parse(v: CommandParse) -> Result<()> {
     let files_list = list_files0(&v.dir, false)?;
     let sw = Stopwatch::start_new();
 
     // let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
 
-    files_list
-        .into_iter()
+    let assets = files_list
+        .into_par_iter()
         .filter_map(|file| -> Option<AssetFile> {
             debug!("file={}", file.display());
 
-            match parse_asset_file(&file) {
+            match AssetFile::from_path(&file) {
                 Err(e) => {
                     error!("failed to parse file: {:?}", e);
                     None
@@ -353,7 +275,7 @@ fn parse(v: CommandParse) -> Result<()> {
                     let mut meta_file = PathBuf::from(&file);
                     meta_file.set_file_name(filename);
 
-                    match parse_meta_file(&meta_file) {
+                    match FileInfo::from_path(&meta_file) {
                         Ok(meta) => {
                             parsed.guid = Some(meta.guid);
                         }
@@ -372,7 +294,17 @@ fn parse(v: CommandParse) -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    eprintln!("took={}ms", sw.elapsed_ms());
+    let mut num_objects = 0;
+    for asset in &assets {
+        num_objects += asset.objects.len();
+    }
+
+    eprintln!(
+        "took={}ms, assets={}, objects={}",
+        sw.elapsed_ms(),
+        assets.len(),
+        num_objects
+    );
     Ok(())
 }
 
