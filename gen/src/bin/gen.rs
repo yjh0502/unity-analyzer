@@ -255,6 +255,8 @@ pub enum Root {{
 
 #[allow(unused)]
 struct AssetIndex {
+    root: PathBuf,
+
     /// guid -> AssetFile
     assets: HashMap<PathBuf, AssetFile>,
 
@@ -263,7 +265,27 @@ struct AssetIndex {
 }
 
 impl AssetIndex {
-    fn new(assets: HashMap<PathBuf, AssetFile>) -> Self {
+    fn from_path<P: AsRef<Path>>(root: P) -> Result<Self> {
+        let assets_dir = Path::join(root.as_ref(), "Assets");
+
+        let files_list = list_files0(&assets_dir)?;
+        let meta_files_list = list_meta_files(&assets_dir)?;
+
+        // add unity-serialized files
+        let mut assets = files_list
+            .into_par_iter()
+            .filter_map(try_parse_path)
+            .collect::<HashMap<_, _>>();
+
+        // add other assets
+        for meta_path in meta_files_list {
+            if let Some((path, asset)) = try_parse_path(meta_path) {
+                if !assets.contains_key(&path) {
+                    assets.insert(path, asset);
+                }
+            }
+        }
+
         // tracking file-level intra-dependencies
         let mut forward_refs = Vec::new();
         let mut num_objects = 0;
@@ -298,10 +320,11 @@ impl AssetIndex {
             forward_refs.len(),
         );
 
-        Self {
+        Ok(Self {
+            root: root.as_ref().to_path_buf(),
             assets,
             forward_refs,
-        }
+        })
     }
 
     fn forward_refs(&self, src: String) -> &[(String, String)] {
@@ -312,6 +335,77 @@ impl AssetIndex {
             .equal_range_by(|(ref_src, _ref_dst)| ref_src.cmp(&src));
 
         &self.forward_refs[range]
+    }
+
+    fn danglings(&self) -> Result<Vec<PathBuf>> {
+        let resources_dir = Path::join(&self.root, "Assets/Resources");
+        let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
+
+        let mut visited = HashSet::new();
+        let mut queue = Vec::new();
+
+        for (path, asset) in &self.assets {
+            // handle resources (run-time loadable assets)
+            if path.starts_with(&resources_dir) || path.starts_with(&streaming_assets_dir) {
+                if let Some(guid) = asset.guid() {
+                    queue.push(guid);
+                }
+                continue;
+            }
+
+            if let Some(meta) = &asset.meta {
+                // mark all asset bundles dirty
+                if meta.asset_bundle_name().is_some() {
+                    if let Some(guid) = asset.guid() {
+                        queue.push(guid);
+                    }
+                }
+            }
+        }
+
+        {
+            use std::io::BufRead;
+
+            // temp...
+            let file = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
+            let prefix = "    guid: ";
+            let f = File::open(&file)?;
+            let reader = std::io::BufReader::new(f);
+            for line in reader.lines() {
+                let line = line?;
+
+                if line.starts_with(prefix) {
+                    let guid = &line[(prefix.len())..];
+                    queue.push(guid.trim().to_owned());
+                }
+            }
+        }
+
+        while let Some(item) = queue.pop() {
+            visited.insert(item.clone());
+
+            for (_, dst) in self.forward_refs(item) {
+                if visited.contains(dst) {
+                    continue;
+                }
+
+                queue.push(dst.clone());
+            }
+        }
+
+        eprintln!("total={}, visited={}", self.assets.len(), visited.len());
+
+        let mut danglings = Vec::new();
+        for (path, asset) in &self.assets {
+            if let Some(meta) = &asset.meta {
+                if !visited.contains(&meta.guid) {
+                    danglings.push(path.clone());
+                }
+            }
+        }
+
+        danglings.sort();
+        Ok(danglings)
     }
 }
 
@@ -383,103 +477,14 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
 }
 
 fn parse(v: CommandParse) -> Result<()> {
-    let assets_dir = Path::join(&v.dir, "Assets");
-    let resources_dir = Path::join(&v.dir, "Assets/Resources");
-    let streaming_assets_dir = Path::join(&v.dir, "Assets/StreamingAssets");
-
-    let files_list = list_files0(&assets_dir)?;
-    let meta_files_list = list_meta_files(&assets_dir)?;
     let sw = Stopwatch::start_new();
 
-    // let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
+    let idx = AssetIndex::from_path(&v.dir)?;
 
-    // add unity-serialized files
-    let mut assets = files_list
-        .into_par_iter()
-        .filter_map(try_parse_path)
-        .collect::<HashMap<_, _>>();
-
-    // add other assets
-    for meta_path in meta_files_list {
-        if let Some((path, asset)) = try_parse_path(meta_path) {
-            if !assets.contains_key(&path) {
-                assets.insert(path, asset);
-            }
-        }
-    }
-
-    let idx = AssetIndex::new(assets);
-
-    {
-        let mut visited = HashSet::new();
-        let mut queue = Vec::new();
-
-        for (path, asset) in &idx.assets {
-            // handle resources (run-time loadable assets)
-            if path.starts_with(&resources_dir) || path.starts_with(&streaming_assets_dir) {
-                if let Some(guid) = asset.guid() {
-                    queue.push(guid);
-                }
-                continue;
-            }
-
-            if let Some(meta) = &asset.meta {
-                // mark all asset bundles dirty
-                if meta.asset_bundle_name().is_some() {
-                    if let Some(guid) = asset.guid() {
-                        queue.push(guid);
-                    }
-                }
-            }
-        }
-
-        {
-            use std::io::BufRead;
-
-            // temp...
-            let file = Path::join(&v.dir, "ProjectSettings/EditorBuildSettings.asset");
-            let prefix = "    guid: ";
-            let f = File::open(&file)?;
-            let reader = std::io::BufReader::new(f);
-            for line in reader.lines() {
-                let line = line?;
-
-                if line.starts_with(prefix) {
-                    let guid = &line[(prefix.len())..];
-                    queue.push(guid.trim().to_owned());
-                }
-            }
-        }
-
-        while let Some(item) = queue.pop() {
-            visited.insert(item.clone());
-
-            for (_, dst) in idx.forward_refs(item) {
-                if visited.contains(dst) {
-                    continue;
-                }
-
-                queue.push(dst.clone());
-            }
-        }
-
-        eprintln!("total={}, visited={}", idx.assets.len(), visited.len());
-
-        let mut danglings = Vec::new();
-        for (path, asset) in &idx.assets {
-            if let Some(meta) = &asset.meta {
-                if !visited.contains(&meta.guid) {
-                    danglings.push(path.clone());
-                }
-            }
-        }
-
-        danglings.sort();
-
-        let mut file = File::create("dangling.log")?;
-        for path in danglings {
-            write!(&mut file, "{}\n", path.display())?;
-        }
+    let danglings = idx.danglings()?;
+    let mut file = File::create("dangling.log")?;
+    for path in danglings {
+        write!(&mut file, "{}\n", path.display())?;
     }
 
     eprintln!("took={}ms", sw.elapsed_ms(),);
