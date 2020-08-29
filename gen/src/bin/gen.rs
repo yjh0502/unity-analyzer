@@ -413,6 +413,18 @@ fn parse(v: CommandParse) -> Result<()> {
         let mut queue = Vec::new();
 
         {
+            for asset in _idx.assets.values() {
+                if let Some(meta) = &asset.meta {
+                    if meta.asset_bundle_name().is_some() {
+                        if let Some(guid) = asset.guid() {
+                            queue.push(guid);
+                        }
+                    }
+                }
+            }
+        }
+
+        {
             use std::io::BufRead;
 
             // temp...
@@ -447,10 +459,6 @@ fn parse(v: CommandParse) -> Result<()> {
         let mut danglings = Vec::new();
         for (path, asset) in &_idx.assets {
             if let Some(meta) = &asset.meta {
-                if meta.asset_bundle_name().is_some() {
-                    continue;
-                }
-
                 if !visited.contains(&meta.guid) {
                     danglings.push(path.clone());
                 }

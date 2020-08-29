@@ -245,6 +245,13 @@ impl AssetFile {
             objects,
         })
     }
+
+    pub fn guid(&self) -> Option<String> {
+        match &self.meta {
+            Some(meta) => Some(meta.guid.clone()),
+            None => None,
+        }
+    }
 }
 
 /// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
