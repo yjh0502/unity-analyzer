@@ -2,6 +2,7 @@ use argh::FromArgs;
 use gen::*;
 use log::*;
 use rayon::prelude::*;
+use serde_derive::Deserialize;
 use serde_gen::*;
 use std::fs::File;
 use std::{
@@ -43,7 +44,10 @@ struct CommandTypeGen {
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "parse", description = "parse")]
-struct CommandParse {}
+struct CommandParse {
+    #[argh(positional)]
+    dir: String,
+}
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "ls", description = "ls")]
@@ -250,21 +254,50 @@ pub enum Root {{
     Ok(())
 }
 
-fn parse() -> Result<()> {
-    let files_list = gen::files_list("filelist")?;
+/// 파일에 대한 정보(meta). 파일은 경로와 guid를 가지고 있습니다.
+#[derive(Deserialize)]
+struct FileInfo {
+    guid: String,
+}
+
+/// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
+/// 내부에서 object tree 구조를 가지고 있습니다.
+struct GraphNode {
+    /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
+    object_id: usize,
+    /// fileID
+    file_id: usize,
+}
+
+fn parse_meta_file<P: AsRef<Path>>(path: P) -> Result<FileInfo> {
+    let content = std::fs::read_to_string(path)?;
+    let parsed = serde_yaml::from_str(&content)?;
+    Ok(parsed)
+}
+
+fn parse(v: CommandParse) -> Result<()> {
+    let files_list = list_files0(&v.dir)?;
     let sw = Stopwatch::start_new();
 
     files_list
         .into_par_iter()
         .map(|file| -> Result<()> {
-            debug!("file={}", file);
+            debug!("file={}", file.display());
+
+            if let Some(ext) = file.extension() {
+                if ext == "meta" {
+                    let parsed = parse_meta_file(&file)?;
+                    debug!("guid={}", parsed.guid);
+                    return Ok(());
+                }
+            }
 
             let buf = gen::YamlBuf::from_filename(&file)?;
             for res in buf.iter() {
                 let (_key, body) = res?;
                 let _parsed = serde_yaml::from_str::<serde_yaml::Value>(body);
                 if let Err(e) = _parsed {
-                    error!("filename={}\ncontent={}\nerr={}", file, body, e);
+                    error!("filename={}\ncontent={}\nerr={}", file.display(), body, e);
                 }
                 //info!("parsed: {:?}", parsed);
             }
@@ -342,7 +375,7 @@ fn main() -> Result<()> {
 
     match args.nested {
         SubCommands::TypeGen(v) => typegen(v),
-        SubCommands::Parse(_) => parse(),
+        SubCommands::Parse(v) => parse(v),
         SubCommands::ListFiles(v) => list_files(v),
     }
 }

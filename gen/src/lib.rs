@@ -14,7 +14,7 @@ pub struct YamlBuf {
 }
 
 impl YamlBuf {
-    pub fn from_filename(filename: &str) -> Result<Self> {
+    pub fn from_filename<P: AsRef<std::path::Path>>(filename: P) -> Result<Self> {
         let file = File::open(&filename)?;
         let mut file = BufReader::new(file);
 
