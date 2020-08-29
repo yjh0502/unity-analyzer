@@ -385,6 +385,7 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
 fn parse(v: CommandParse) -> Result<()> {
     let assets_dir = Path::join(&v.dir, "Assets");
     let resources_dir = Path::join(&v.dir, "Assets/Resources");
+    let streaming_assets_dir = Path::join(&v.dir, "Assets/StreamingAssets");
 
     let files_list = list_files0(&assets_dir)?;
     let meta_files_list = list_meta_files(&assets_dir)?;
@@ -415,7 +416,7 @@ fn parse(v: CommandParse) -> Result<()> {
 
         for (path, asset) in &idx.assets {
             // handle resources (run-time loadable assets)
-            if path.starts_with(&resources_dir) {
+            if path.starts_with(&resources_dir) || path.starts_with(&streaming_assets_dir) {
                 if let Some(guid) = asset.guid() {
                     queue.push(guid);
                 }
