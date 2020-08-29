@@ -312,46 +312,94 @@ impl AssetIndex {
     }
 }
 
+const IGNORE_EXTS: &[&str] = &["a", "cs", "aar", "jar", "dll", "xml"];
+
+fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
+    trace!("file={}", path.display());
+
+    let is_meta = match path.extension() {
+        Some(ext) => ext == "meta",
+        _ => false,
+    };
+
+    if is_meta {
+        // meta file
+        let meta = match FileInfo::from_path(&path) {
+            Ok(meta) => meta,
+            Err(_e) => {
+                error!(
+                    "failed to parse a meta file for file={}, {}",
+                    path.display(),
+                    _e
+                );
+                return None;
+            }
+        };
+        path.set_extension("");
+        if path.is_dir() {
+            // ignore directories
+            return None;
+        }
+
+        if let Some(ext) = path.extension() {
+            if IGNORE_EXTS.iter().find(|v| *v == &ext).is_some() {
+                return None;
+            }
+        }
+
+        return Some((path, AssetFile::from_meta(meta.guid)));
+    }
+
+    match AssetFile::from_path(&path) {
+        Err(e) => {
+            error!("failed to parse file: {:?}", e);
+            None
+        }
+        Ok(mut parsed) => {
+            let mut filename = std::ffi::OsString::from(path.file_name().unwrap());
+            filename.push(".meta");
+            let mut meta_file = PathBuf::from(&path);
+            meta_file.set_file_name(filename);
+
+            match FileInfo::from_path(&meta_file) {
+                Ok(meta) => {
+                    parsed.guid = Some(meta.guid);
+                }
+                Err(_e) => {
+                    error!(
+                        "failed to parse a meta file for file={}, {}",
+                        path.display(),
+                        _e
+                    );
+                }
+            }
+
+            Some((path, parsed))
+        }
+    }
+}
+
 fn parse(v: CommandParse) -> Result<()> {
-    let files_list = list_files0(&v.dir, false)?;
+    let files_list = list_files0(&v.dir)?;
+    let meta_files_list = list_meta_files(&v.dir)?;
     let sw = Stopwatch::start_new();
 
     // let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
 
-    let assets = files_list
+    // add unity-serialized files
+    let mut assets = files_list
         .into_par_iter()
-        .filter_map(|file| -> Option<(PathBuf, AssetFile)> {
-            trace!("file={}", file.display());
-
-            match AssetFile::from_path(&file) {
-                Err(e) => {
-                    error!("failed to parse file: {:?}", e);
-                    None
-                }
-                Ok(mut parsed) => {
-                    let mut filename = std::ffi::OsString::from(file.file_name().unwrap());
-                    filename.push(".meta");
-                    let mut meta_file = PathBuf::from(&file);
-                    meta_file.set_file_name(filename);
-
-                    match FileInfo::from_path(&meta_file) {
-                        Ok(meta) => {
-                            parsed.guid = Some(meta.guid);
-                        }
-                        Err(_e) => {
-                            error!(
-                                "failed to parse a meta file for file={}, {}",
-                                file.display(),
-                                _e
-                            );
-                        }
-                    }
-
-                    Some((file, parsed))
-                }
-            }
-        })
+        .filter_map(try_parse_path)
         .collect::<HashMap<_, _>>();
+
+    // add other assets
+    for meta_path in meta_files_list {
+        if let Some((path, asset)) = try_parse_path(meta_path) {
+            if !assets.contains_key(&path) {
+                assets.insert(path, asset);
+            }
+        }
+    }
 
     let _idx = AssetIndex::new(assets);
 
@@ -384,9 +432,12 @@ fn parse(v: CommandParse) -> Result<()> {
                 }
             }
         }
+
         danglings.sort();
+
+        let mut file = File::create("dangling.log")?;
         for path in danglings {
-            eprintln!("{}", path.display());
+            write!(&mut file, "{}\n", path.display())?;
         }
     }
 
@@ -408,11 +459,10 @@ fn check_yaml<P: AsRef<Path>>(path: P) -> Result<bool> {
     Ok(buf.as_slice() == header)
 }
 
-fn list_files0<P: AsRef<Path>>(dir: P, include_meta: bool) -> Result<Vec<PathBuf>> {
+fn list_meta_files<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
 
     use walkdir::WalkDir;
-
     for entry in WalkDir::new(&dir) {
         let entry = entry?;
         if entry.metadata()?.is_dir() {
@@ -421,22 +471,27 @@ fn list_files0<P: AsRef<Path>>(dir: P, include_meta: bool) -> Result<Vec<PathBuf
 
         let path = entry.path();
 
-        let mut accepted = false;
-
         if let Some(ext) = path.extension() {
             if ext == "meta" {
-                if !include_meta {
-                    continue;
-                }
-                accepted = true;
+                out.push(path.into());
             }
         }
+    }
+    Ok(out)
+}
 
-        if !accepted && check_yaml(path)? {
-            accepted = true;
+fn list_files0<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+
+    use walkdir::WalkDir;
+    for entry in WalkDir::new(&dir) {
+        let entry = entry?;
+        if entry.metadata()?.is_dir() {
+            continue;
         }
 
-        if !accepted {
+        let path = entry.path();
+        if !check_yaml(path)? {
             continue;
         }
 
@@ -447,7 +502,7 @@ fn list_files0<P: AsRef<Path>>(dir: P, include_meta: bool) -> Result<Vec<PathBuf
 }
 
 fn list_files(v: CommandListFiles) -> Result<()> {
-    let path_list = list_files0(&v.dir, true)?;
+    let path_list = list_files0(&v.dir)?;
 
     for path in path_list {
         println!("{}", path.display());

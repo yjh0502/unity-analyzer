@@ -199,6 +199,13 @@ pub struct AssetFile {
 }
 
 impl AssetFile {
+    pub fn from_meta(guid: String) -> Self {
+        Self {
+            guid: Some(guid),
+            objects: Vec::new(),
+        }
+    }
+
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         let mut objects = Vec::new();
 
