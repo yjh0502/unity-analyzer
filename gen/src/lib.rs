@@ -125,7 +125,7 @@ pub fn files_list(filename: &str) -> Result<Vec<String>> {
 }
 
 /// 다른 파일로의 reference.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Reference {
     pub file_id: usize,
     /// guid가 없는 경우는 local reference, 있는 경우는 remote reference

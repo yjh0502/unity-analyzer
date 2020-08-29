@@ -222,6 +222,7 @@ dependencies = [
  "argh",
  "env_logger",
  "log",
+ "ordslice",
  "rayon",
  "serde",
  "serde-gen",
@@ -420,6 +421,12 @@ name = "object"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ab52be62400ca80aa00285d25253d7f7c437b7375c4de678f5405d3afe82ca5"
+
+[[package]]
+name = "ordslice"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd20eec3dbe4376829cb7d80ae6ac45e0a766831dca50202ff2d40db46a8a024"
 
 [[package]]
 name = "parse"

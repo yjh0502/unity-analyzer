@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use serde_gen::*;
 use std::fs::File;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
@@ -253,6 +253,65 @@ pub enum Root {{
     Ok(())
 }
 
+#[allow(unused)]
+struct AssetIndex {
+    /// guid -> AssetFile
+    assets: HashMap<PathBuf, AssetFile>,
+
+    /// sorted
+    forward_refs: Vec<(String, String)>,
+}
+
+impl AssetIndex {
+    fn new(assets: HashMap<PathBuf, AssetFile>) -> Self {
+        // tracking file-level intra-dependencies
+        let mut forward_refs = Vec::new();
+        let mut num_objects = 0;
+        for (_path, asset) in assets.iter() {
+            let guid = asset.guid.clone().unwrap_or(String::new());
+
+            num_objects += asset.objects.len();
+
+            let mut refs = HashSet::new();
+
+            for object in &asset.objects {
+                for reference in &object.references {
+                    if let Some(guid) = &reference.guid {
+                        refs.insert(guid.clone());
+                    }
+                }
+            }
+
+            for reference in refs {
+                forward_refs.push((guid.clone(), reference));
+            }
+        }
+        forward_refs.sort();
+
+        eprintln!(
+            "assets={}, objects={}, refs={}",
+            assets.len(),
+            num_objects,
+            forward_refs.len(),
+        );
+
+        Self {
+            assets,
+            forward_refs,
+        }
+    }
+
+    fn forward_refs(&self, src: String) -> &[(String, String)] {
+        use ordslice::Ext;
+
+        let range = self
+            .forward_refs
+            .equal_range_by(|(ref_src, _ref_dst)| ref_src.cmp(&src));
+
+        &self.forward_refs[range]
+    }
+}
+
 fn parse(v: CommandParse) -> Result<()> {
     let files_list = list_files0(&v.dir, false)?;
     let sw = Stopwatch::start_new();
@@ -261,8 +320,8 @@ fn parse(v: CommandParse) -> Result<()> {
 
     let assets = files_list
         .into_par_iter()
-        .filter_map(|file| -> Option<AssetFile> {
-            debug!("file={}", file.display());
+        .filter_map(|file| -> Option<(PathBuf, AssetFile)> {
+            trace!("file={}", file.display());
 
             match AssetFile::from_path(&file) {
                 Err(e) => {
@@ -288,23 +347,50 @@ fn parse(v: CommandParse) -> Result<()> {
                         }
                     }
 
-                    Some(parsed)
+                    Some((file, parsed))
                 }
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<HashMap<_, _>>();
 
-    let mut num_objects = 0;
-    for asset in &assets {
-        num_objects += asset.objects.len();
+    let _idx = AssetIndex::new(assets);
+
+    {
+        let _entrypoint = "1d61e9e0099917e48895931752dc2d78".to_owned();
+
+        let mut visited = HashSet::new();
+        let mut queue = Vec::new();
+        queue.push(_entrypoint);
+
+        while let Some(item) = queue.pop() {
+            visited.insert(item.clone());
+
+            for (_, dst) in _idx.forward_refs(item) {
+                if visited.contains(dst) {
+                    continue;
+                }
+
+                queue.push(dst.clone());
+            }
+        }
+
+        eprintln!("total={}, visited={}", _idx.assets.len(), visited.len());
+
+        let mut danglings = Vec::new();
+        for (path, asset) in &_idx.assets {
+            if let Some(guid) = &asset.guid {
+                if !visited.contains(guid) {
+                    danglings.push(path.clone());
+                }
+            }
+        }
+        danglings.sort();
+        for path in danglings {
+            eprintln!("{}", path.display());
+        }
     }
 
-    eprintln!(
-        "took={}ms, assets={}, objects={}",
-        sw.elapsed_ms(),
-        assets.len(),
-        num_objects
-    );
+    eprintln!("took={}ms", sw.elapsed_ms(),);
     Ok(())
 }
 
