@@ -46,6 +46,9 @@ struct CommandTypeGen {
 struct CommandParse {
     #[argh(positional)]
     dir: String,
+
+    #[argh(positional)]
+    entrypoint: String,
 }
 
 #[derive(FromArgs, Debug)]
@@ -404,11 +407,9 @@ fn parse(v: CommandParse) -> Result<()> {
     let _idx = AssetIndex::new(assets);
 
     {
-        let _entrypoint = "1d61e9e0099917e48895931752dc2d78".to_owned();
-
         let mut visited = HashSet::new();
         let mut queue = Vec::new();
-        queue.push(_entrypoint);
+        queue.push(v.entrypoint);
 
         while let Some(item) = queue.pop() {
             visited.insert(item.clone());
