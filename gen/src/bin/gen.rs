@@ -7,6 +7,7 @@ use std::fs::File;
 use std::{
     collections::HashMap,
     io::{BufWriter, Write},
+    path::Path,
 };
 use stopwatch::Stopwatch;
 
@@ -24,6 +25,7 @@ struct TopLevel {
 enum SubCommands {
     TypeGen(CommandTypeGen),
     Parse(CommandParse),
+    ListFiles(CommandListFiles),
 }
 
 #[derive(FromArgs, Debug)]
@@ -42,6 +44,13 @@ struct CommandTypeGen {
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "parse", description = "parse")]
 struct CommandParse {}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "ls", description = "ls")]
+struct CommandListFiles {
+    #[argh(positional)]
+    dir: String,
+}
 
 mod typegen {
     use super::*;
@@ -267,6 +276,54 @@ fn parse() -> Result<()> {
     Ok(())
 }
 
+fn check_yaml<P: AsRef<Path>>(path: P) -> Result<bool> {
+    use std::io::Read;
+
+    let mut file = File::open(path)?;
+    let header = b"%YAML 1.1";
+
+    let mut buf = Vec::with_capacity(header.len());
+    buf.resize(header.len(), 0);
+
+    file.read(&mut buf)?;
+
+    Ok(buf.as_slice() == header)
+}
+
+fn list_files(v: CommandListFiles) -> Result<()> {
+    use walkdir::WalkDir;
+
+    for entry in WalkDir::new(&v.dir) {
+        let entry = entry?;
+        if entry.metadata()?.is_dir() {
+            continue;
+        }
+
+        let path = entry.path();
+
+        let mut accepted = false;
+
+        if let Some(ext) = path.extension() {
+            if ext == "meta" {
+                accepted = true;
+            }
+        }
+
+        if !accepted && check_yaml(path)? {
+            accepted = true;
+        }
+
+        if !accepted {
+            continue;
+        }
+
+        println!("{}", path.display());
+    }
+
+    Ok(())
+    //
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -275,5 +332,6 @@ fn main() -> Result<()> {
     match args.nested {
         SubCommands::TypeGen(v) => typegen(v),
         SubCommands::Parse(_) => parse(),
+        SubCommands::ListFiles(v) => list_files(v),
     }
 }
