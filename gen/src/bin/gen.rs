@@ -45,10 +45,7 @@ struct CommandTypeGen {
 #[argh(subcommand, name = "parse", description = "parse")]
 struct CommandParse {
     #[argh(positional)]
-    dir: String,
-
-    #[argh(positional)]
-    entrypoint: String,
+    dir: PathBuf,
 }
 
 #[derive(FromArgs, Debug)]
@@ -383,8 +380,10 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
 }
 
 fn parse(v: CommandParse) -> Result<()> {
-    let files_list = list_files0(&v.dir)?;
-    let meta_files_list = list_meta_files(&v.dir)?;
+    let assets_dir = Path::join(&v.dir, "Assets");
+
+    let files_list = list_files0(&assets_dir)?;
+    let meta_files_list = list_meta_files(&assets_dir)?;
     let sw = Stopwatch::start_new();
 
     // let files_list = files_list.into_iter().take(10).collect::<Vec<_>>();
@@ -409,7 +408,24 @@ fn parse(v: CommandParse) -> Result<()> {
     {
         let mut visited = HashSet::new();
         let mut queue = Vec::new();
-        queue.push(v.entrypoint);
+
+        {
+            use std::io::BufRead;
+
+            // temp...
+            let file = Path::join(&v.dir, "ProjectSettings/EditorBuildSettings.asset");
+            let prefix = "    guid: ";
+            let f = File::open(&file)?;
+            let reader = std::io::BufReader::new(f);
+            for line in reader.lines() {
+                let line = line?;
+
+                if line.starts_with(prefix) {
+                    let guid = &line[(prefix.len())..];
+                    queue.push(guid.trim().to_owned());
+                }
+            }
+        }
 
         while let Some(item) = queue.pop() {
             visited.insert(item.clone());
