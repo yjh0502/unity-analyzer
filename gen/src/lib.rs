@@ -10,6 +10,8 @@ use std::{
 };
 use stopwatch::Stopwatch;
 
+pub mod typegen;
+
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
 pub struct YamlBuf {
