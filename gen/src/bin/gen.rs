@@ -266,17 +266,21 @@ struct AssetIndex {
 
 impl AssetIndex {
     fn from_path<P: AsRef<Path>>(root: P) -> Result<Self> {
-        let assets_dir = Path::join(root.as_ref(), "Assets");
+        let root = root.as_ref();
+        let assets_dir = Path::join(root, "Assets");
 
         let files_list = list_files0(&assets_dir)?;
         let meta_files_list = list_meta_files(&assets_dir)?;
 
         // add unity-serialized files
+        let sw = Stopwatch::start_new();
         let mut assets = files_list
             .into_par_iter()
             .filter_map(try_parse_path)
             .collect::<HashMap<_, _>>();
+        let elapsed_assets = sw.elapsed_ms();
 
+        let sw = Stopwatch::start_new();
         // add other assets
         meta_files_list
             .into_iter()
@@ -284,8 +288,10 @@ impl AssetIndex {
             .for_each(|(path, asset)| {
                 assets.entry(path).or_insert(asset);
             });
+        let elapsed_meta = sw.elapsed_ms();
 
         // tracking file-level intra-dependencies
+        let sw = Stopwatch::start_new();
         let mut forward_refs = Vec::new();
         let mut num_objects = 0;
         for (_path, asset) in assets.iter() {
@@ -297,7 +303,6 @@ impl AssetIndex {
             num_objects += asset.objects.len();
 
             let mut refs = HashSet::new();
-
             for object in &asset.objects {
                 for reference in &object.references {
                     if let Some(guid) = &reference.guid {
@@ -311,16 +316,20 @@ impl AssetIndex {
             }
         }
         forward_refs.sort();
+        let elapsed_ref = sw.elapsed_ms();
 
-        eprintln!(
-            "assets={}, objects={}, refs={}",
+        info!(
+            "assets={}/{}ms, meta={}ms, objects={}, refs={}/{}ms",
             assets.len(),
+            elapsed_assets,
+            elapsed_meta,
             num_objects,
             forward_refs.len(),
+            elapsed_ref,
         );
 
         Ok(Self {
-            root: root.as_ref().to_path_buf(),
+            root: root.to_path_buf(),
             assets,
             forward_refs,
         })
@@ -392,7 +401,7 @@ impl AssetIndex {
             }
         }
 
-        eprintln!("total={}, visited={}", self.assets.len(), visited.len());
+        info!("total={}, visited={}", self.assets.len(), visited.len());
 
         let mut danglings = Vec::new();
         for (path, asset) in &self.assets {
@@ -408,7 +417,7 @@ impl AssetIndex {
     }
 }
 
-const IGNORE_EXTS: &[&str] = &["a", "cs", "aar", "jar", "dll", "xml"];
+const IGNORE_EXTS: &[&str] = &["a", "so", "cs", "aar", "jar", "dll", "xml"];
 
 fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
     trace!("file={}", path.display());
@@ -481,12 +490,13 @@ fn parse(v: CommandParse) -> Result<()> {
     let idx = AssetIndex::from_path(&v.dir)?;
 
     let danglings = idx.danglings()?;
+    let danglings_count = danglings.len();
     let mut file = File::create("dangling.log")?;
     for path in danglings {
         write!(&mut file, "{}\n", path.display())?;
     }
 
-    eprintln!("took={}ms", sw.elapsed_ms(),);
+    info!("took={}ms, danglings={}", sw.elapsed_ms(), danglings_count);
     Ok(())
 }
 
