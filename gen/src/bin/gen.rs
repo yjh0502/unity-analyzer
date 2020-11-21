@@ -194,10 +194,13 @@ pub enum Root {{
 struct AssetIndex {
     root: PathBuf,
 
-    /// guid -> AssetFile
+    /// path -> AssetFile
     assets: HashMap<PathBuf, AssetFile>,
 
-    /// sorted
+    /// guid -> Path
+    asset_guids: HashMap<String, PathBuf>,
+
+    /// sorted forward references, (src, dst) tuple
     forward_refs: Vec<(String, String)>,
 }
 
@@ -255,6 +258,17 @@ impl AssetIndex {
         forward_refs.sort();
         let elapsed_ref = sw.elapsed_ms();
 
+        // guid to path mapping
+        let asset_guids = assets
+            .iter()
+            .filter_map(|(path, asset)| {
+                asset
+                    .meta
+                    .as_ref()
+                    .map(|meta| (meta.guid.clone(), path.clone()))
+            })
+            .collect();
+
         info!(
             "assets={}/{}ms, meta={}ms, objects={}, refs={}/{}ms",
             assets.len(),
@@ -268,6 +282,7 @@ impl AssetIndex {
         Ok(Self {
             root: root.to_path_buf(),
             assets,
+            asset_guids,
             forward_refs,
         })
     }
@@ -352,6 +367,30 @@ impl AssetIndex {
         danglings.sort();
         Ok(danglings)
     }
+
+    fn dbg_print_deps(&self, guid: &str) {
+        let mut visited = HashSet::new();
+        let mut q = std::collections::VecDeque::new();
+
+        // initial GUID
+        q.push_back((0, guid.to_owned()));
+        visited.insert(guid.to_owned());
+
+        while let Some((depth, guid)) = q.pop_front() {
+            if let Some(path) = self.asset_guids.get(&guid) {
+                for _ in 0..depth {
+                    eprint!("  ");
+                }
+                eprintln!("{:?}", path);
+            }
+
+            for (_src, dst) in self.forward_refs(guid) {
+                if visited.insert(dst.to_owned()) {
+                    q.push_front((depth + 1, dst.to_owned()));
+                }
+            }
+        }
+    }
 }
 
 const IGNORE_EXTS: &[&str] = &["a", "so", "cs", "aar", "jar", "dll", "xml"];
@@ -433,6 +472,7 @@ fn parse(v: CommandParse) -> Result<()> {
         write!(&mut file, "{}\n", path.display())?;
     }
 
+    idx.dbg_print_deps("1d61e9e0099917e48895931752dc2d78");
     info!("took={}ms, danglings={}", sw.elapsed_ms(), danglings_count);
     Ok(())
 }
