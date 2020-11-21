@@ -368,6 +368,13 @@ impl AssetIndex {
         Ok(danglings)
     }
 
+    fn asset_path_str(&self, path: &Path) -> String {
+        let stripped = path
+            .strip_prefix(&self.root)
+            .expect("failed to strip prefix");
+        stripped.to_string_lossy().to_string()
+    }
+
     fn dbg_print_deps(&self, guid: &str) {
         let mut visited = HashSet::new();
         let mut q = std::collections::VecDeque::new();
@@ -381,7 +388,7 @@ impl AssetIndex {
                 for _ in 0..depth {
                     eprint!("  ");
                 }
-                eprintln!("{:?}", path);
+                eprintln!("{}", self.asset_path_str(path));
             }
 
             for (_src, dst) in self.forward_refs(guid) {
