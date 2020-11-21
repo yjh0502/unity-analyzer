@@ -10,7 +10,12 @@ use std::{
 };
 use stopwatch::Stopwatch;
 
+pub mod object;
+pub mod objectheader;
 pub mod typegen;
+
+use object::Object;
+use objectheader::ObjectHeader;
 
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
@@ -162,57 +167,13 @@ impl FileInfo {
         importer.assetBundleName.as_ref().map(|s| s.as_str())
     }
 }
-
-fn parse_object(header: ObjectHeader, body: &str) -> Result<Object> {
-    let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
-    let mut references = Vec::new();
-    find_references(&parsed, &mut references)?;
-
-    Ok(Object { header, references })
-}
-
-fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result<()> {
-    use serde_yaml::Value::*;
-
-    match node {
-        Mapping(v) => {
-            let mut file_id = None;
-            let mut guid = None;
-            for (k, v) in v.iter() {
-                if let String(key) = k {
-                    if key == "fileID" {
-                        file_id = Some(v);
-                    } else if key == "guid" {
-                        guid = Some(v);
-                    }
-                }
-                find_references(v, out)?;
-            }
-
-            if let Some(file_id) = file_id {
-                if let Some(file_id) = file_id.as_u64() {
-                    out.push(Reference {
-                        file_id: file_id as usize,
-                        guid: guid.and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                    });
-                }
-            }
-        }
-        Sequence(v) => {
-            for item in v.iter() {
-                find_references(item, out)?;
-            }
-        }
-        _ => {}
-    }
-
-    Ok(())
-}
-
 #[derive(Debug)]
 pub struct AssetFile {
     pub meta: Option<FileInfo>,
     pub objects: Vec<Object>,
+
+    // file_id -> objects idx
+    file_id_indices: HashMap<i64, usize>,
 }
 
 impl AssetFile {
@@ -220,11 +181,13 @@ impl AssetFile {
         Self {
             meta: Some(meta),
             objects: Vec::new(),
+            file_id_indices: HashMap::new(),
         }
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         let mut objects = Vec::new();
+        let mut file_id_indices = HashMap::new();
 
         let path = path.as_ref();
         let buf = YamlBuf::from_filename(path)?;
@@ -238,13 +201,16 @@ impl AssetFile {
                 }
             };
 
-            let obj = parse_object(header, body)?;
+            let obj = Object::from_header_body(header, body)?;
+
+            file_id_indices.insert(obj.header.file_id, objects.len());
             objects.push(obj);
         }
 
         Ok(Self {
             meta: None,
             objects,
+            file_id_indices,
         })
     }
 
@@ -254,59 +220,11 @@ impl AssetFile {
             None => None,
         }
     }
-}
 
-/// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
-/// 내부에서 object tree 구조를 가지고 있습니다.
-#[derive(Debug)]
-pub struct ObjectHeader {
-    /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
-    pub object_id: u64,
-    /// fileID
-    pub file_id: i64,
-}
+    pub fn dbg_transform_path(&self, file_id: i64) {
+        let idx = self.file_id_indices[&file_id];
+        let _obj = &self.objects[idx];
 
-impl ObjectHeader {
-    pub fn from_str(s: &str) -> Result<Self> {
-        let s = s.trim();
-        if !s.starts_with("!u!") {
-            bail!("unknown header");
-        }
-        let s = &s[3..];
-        let mut split = s.split(" ");
-
-        let object_id = match split.next() {
-            Some(s) => s.parse::<u64>()?,
-            None => bail!("unknown header"),
-        };
-
-        let file_id = match split.next() {
-            Some(s) => {
-                if !s.starts_with("&") {
-                    bail!("unknown header");
-                }
-                (&s[1..]).parse::<i64>()?
-            }
-            None => bail!("unknown header"),
-        };
-
-        Ok(ObjectHeader { object_id, file_id })
-    }
-}
-
-/// object 정보. 의존성 분석을 위한거라, reference 정보만 담고 있습니다.
-#[derive(Debug)]
-pub struct Object {
-    pub header: ObjectHeader,
-    pub references: Vec<Reference>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_header() {
-        ObjectHeader::from_str("!u!29 &1").expect("failed to parse");
+        // find GameObject first
     }
 }
