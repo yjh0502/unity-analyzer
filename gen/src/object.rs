@@ -148,9 +148,9 @@ fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result
             }
 
             if let Some(file_id) = file_id {
-                if let Some(file_id) = file_id.as_u64() {
+                if let Some(file_id) = file_id.as_i64() {
                     out.push(Reference {
-                        file_id: file_id as usize,
+                        file_id,
                         guid: guid.and_then(|v| v.as_str()).map(|v| v.to_owned()),
                     });
                 }

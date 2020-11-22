@@ -127,6 +127,14 @@ pub fn list_files<P: AsRef<Path>>(dir: P) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ForwardRef {
+    pub src_guid: String,
+    pub src_file_id: i64,
+    pub dst_guid: String,
+    pub dst_file_id: i64,
+}
+
 pub struct AssetIndex {
     root: PathBuf,
 
@@ -137,7 +145,7 @@ pub struct AssetIndex {
     asset_guids: HashMap<String, PathBuf>,
 
     /// sorted forward references, (src, dst) tuple
-    forward_refs: Vec<(String, String)>,
+    forward_refs: Vec<ForwardRef>,
 }
 
 impl AssetIndex {
@@ -168,29 +176,32 @@ impl AssetIndex {
 
         // tracking file-level intra-dependencies
         let sw = Stopwatch::start_new();
-        let mut forward_refs = Vec::new();
+        let mut refs = HashSet::new();
         let mut num_objects = 0;
         for (_path, asset) in assets.iter() {
-            let guid = match &asset.meta {
+            let src_guid = match &asset.meta {
                 Some(meta) => meta.guid.clone(),
                 None => String::new(),
             };
 
             num_objects += asset.objects.len();
 
-            let mut refs = HashSet::new();
             for object in &asset.objects {
                 for reference in &object.references {
                     if let Some(guid) = &reference.guid {
-                        refs.insert(guid.clone());
+                        refs.insert(ForwardRef {
+                            src_guid: src_guid.clone(),
+                            src_file_id: object.header.file_id,
+                            dst_guid: guid.clone(),
+                            dst_file_id: reference.file_id,
+                        });
                     }
                 }
             }
-
-            for reference in refs {
-                forward_refs.push((guid.clone(), reference));
-            }
         }
+        let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
+
+        trace!("forward_refs={:?}", forward_refs.len());
         forward_refs.sort();
         let elapsed_ref = sw.elapsed_ms();
 
@@ -223,12 +234,12 @@ impl AssetIndex {
         })
     }
 
-    pub fn forward_refs(&self, src: String) -> &[(String, String)] {
+    pub fn forward_refs(&self, src: String) -> &[ForwardRef] {
         use ordslice::Ext;
 
         let range = self
             .forward_refs
-            .equal_range_by(|(ref_src, _ref_dst)| ref_src.cmp(&src));
+            .equal_range_by(|forward_ref| forward_ref.src_guid.cmp(&src));
 
         &self.forward_refs[range]
     }
@@ -278,7 +289,8 @@ impl AssetIndex {
         while let Some(item) = queue.pop() {
             visited.insert(item.clone());
 
-            for (_, dst) in self.forward_refs(item) {
+            for forward_ref in self.forward_refs(item) {
+                let dst = &forward_ref.dst_guid;
                 if visited.contains(dst) {
                     continue;
                 }
@@ -325,7 +337,8 @@ impl AssetIndex {
                 eprintln!("{}", self.asset_path_str(path));
             }
 
-            for (_src, dst) in self.forward_refs(guid) {
+            for forward_ref in self.forward_refs(guid) {
+                let dst = &forward_ref.dst_guid;
                 if visited.insert(dst.to_owned()) {
                     q.push_front((depth + 1, dst.to_owned()));
                 }

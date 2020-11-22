@@ -135,7 +135,7 @@ pub fn files_list(filename: &str) -> Result<Vec<String>> {
 /// 다른 파일로의 reference.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Reference {
-    pub file_id: usize,
+    pub file_id: i64,
     /// guid가 없는 경우는 local reference, 있는 경우는 remote reference
     pub guid: Option<String>,
 }
@@ -299,11 +299,28 @@ impl AssetFile {
         None
     }
 
-    pub fn dbg_transform_path(&self, file_id: i64) {
-        let idx = self.file_id_indices[&file_id];
-        let _obj = &self.objects[idx];
-
+    pub fn dbg_transform_path(&self, file_id: i64) -> Option<String> {
         // find GameObject first
+        let mut transform = self.transform(file_id)?;
+
+        let mut path = Vec::new();
+        loop {
+            let go = self.gameobject(transform.header.file_id)?;
+            let name = go.get_str("m_Name")?;
+            path.push(name);
+
+            let father_id = transform.father()?;
+            if father_id == 0 {
+                break;
+            }
+            transform = self.object_by_file_id(father_id)?;
+        }
+
+        path.reverse();
+        let path = path
+            .into_iter()
+            .fold(String::new(), |acc, n| format!("{}/{}", acc, n));
+        Some(path)
     }
 
     fn dbg_object_hierarchy0(&self, prefix: &str, file_id: i64) -> Option<()> {
