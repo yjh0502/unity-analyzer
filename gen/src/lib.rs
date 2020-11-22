@@ -221,10 +221,56 @@ impl AssetFile {
         }
     }
 
+    pub fn object_by_file_id<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+        let idx = self.file_id_indices[&file_id];
+        let obj = &self.objects[idx];
+        Some(obj)
+    }
+
+    pub fn gameobject<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+        let obj = self.object_by_file_id(file_id)?;
+        let go = obj.gameobject()?;
+        self.object_by_file_id(go)
+    }
+
+    pub fn transform<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+        let go = self.gameobject(file_id)?;
+        let components = go.components()?;
+
+        for file_id in components {
+            if let Some(component) = self.object_by_file_id(file_id) {
+                if component.ty_name == object::TY_TRANSFORM {
+                    return Some(component);
+                }
+            } else {
+                warn!("failed to find file_id={}", file_id);
+            }
+        }
+
+        None
+    }
+
     pub fn dbg_transform_path(&self, file_id: i64) {
         let idx = self.file_id_indices[&file_id];
         let _obj = &self.objects[idx];
 
         // find GameObject first
+    }
+
+    pub fn dbg_object_hierarchy(&self) {
+        let mut transforms = Vec::new();
+        let mut relation = Vec::new();
+
+        for obj in self.objects.iter() {
+            if obj.ty_name == object::TY_TRANSFORM {
+                if let Some(children) = obj.children() {
+                    for child in children {
+                        relation.push((obj.header.file_id, child));
+                    }
+                }
+
+                transforms.push(obj);
+            }
+        }
     }
 }

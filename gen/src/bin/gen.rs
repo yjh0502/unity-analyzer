@@ -398,6 +398,10 @@ impl AssetIndex {
             }
         }
     }
+
+    fn dbg_print_hierarchy(&self, guid: &str) {
+        todo!();
+    }
 }
 
 const IGNORE_EXTS: &[&str] = &["a", "so", "cs", "aar", "jar", "dll", "xml"];
@@ -479,7 +483,14 @@ fn parse(v: CommandParse) -> Result<()> {
         write!(&mut file, "{}\n", path.display())?;
     }
 
-    idx.dbg_print_deps("1d61e9e0099917e48895931752dc2d78");
+    if false {
+        idx.dbg_print_deps("1d61e9e0099917e48895931752dc2d78");
+    }
+
+    if false {
+        idx.dbg_print_hierarchy("1ea564b91575e4d2092ac28fe9dd255e");
+    }
+
     info!("took={}ms, danglings={}", sw.elapsed_ms(), danglings_count);
     Ok(())
 }

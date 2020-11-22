@@ -9,6 +9,31 @@ pub struct Object {
     pub parsed: serde_yaml::Value,
 }
 
+fn try_find_value<'a, 'b>(
+    value: &'a serde_yaml::Value,
+    key: &'b str,
+) -> Option<&'a serde_yaml::Value> {
+    let m = match value {
+        serde_yaml::Value::Mapping(m) => m,
+        _ => return None,
+    };
+
+    for (k, v) in m.iter() {
+        if let serde_yaml::Value::String(ref key_str) = k {
+            if key == key_str {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+fn try_get_file_id(value: &serde_yaml::Value) -> Option<i64> {
+    try_find_value(value, "fileID")?.as_i64()
+}
+
+pub const TY_TRANSFORM: &'static str = "Transform";
+
 impl Object {
     pub fn from_header_body(header: ObjectHeader, body: &str) -> Result<Object> {
         let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
@@ -35,6 +60,32 @@ impl Object {
 
             parsed,
         })
+    }
+
+    pub fn gameobject(&self) -> Option<i64> {
+        if self.ty_name == "GameObject" {
+            Some(self.header.file_id)
+        } else {
+            let obj = try_find_value(&self.parsed, "m_GameObject")?;
+            try_get_file_id(obj)
+        }
+    }
+
+    fn references_vec(&self, key: &str) -> Option<Vec<i64>> {
+        let component = try_find_value(&self.parsed, key)?;
+        if let serde_yaml::Value::Sequence(ref s) = component {
+            Some(s.iter().filter_map(try_get_file_id).collect())
+        } else {
+            None
+        }
+    }
+
+    pub fn components(&self) -> Option<Vec<i64>> {
+        self.references_vec("m_Component")
+    }
+
+    pub fn children(&self) -> Option<Vec<i64>> {
+        self.references_vec("m_Children")
     }
 }
 
