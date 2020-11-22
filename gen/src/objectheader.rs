@@ -9,6 +9,8 @@ pub struct ObjectHeader {
     pub object_id: u64,
     /// fileID
     pub file_id: i64,
+    /// Tag. stripped?
+    pub tag: String,
 }
 
 impl ObjectHeader {
@@ -35,7 +37,13 @@ impl ObjectHeader {
             None => bail!("unknown header"),
         };
 
-        Ok(Self { object_id, file_id })
+        let tag = split.next().map(str::to_owned).unwrap_or(String::new());
+
+        Ok(Self {
+            object_id,
+            file_id,
+            tag,
+        })
     }
 }
 

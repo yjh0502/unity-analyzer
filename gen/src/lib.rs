@@ -191,7 +191,7 @@ impl HierarchyIndex {
                 let father = obj.father();
                 // eprintln!("father={:?}", father);
                 if father == Some(0) {
-                    eprintln!("root file_id={:?}", obj.header.file_id);
+                    trace!("root file_id={:?}", obj.header.file_id);
                     roots.push(obj.header.file_id);
                 }
             }
@@ -307,6 +307,14 @@ impl AssetFile {
     }
 
     fn dbg_object_hierarchy0(&self, prefix: &str, file_id: i64) -> Option<()> {
+        let transform = self.object_by_file_id(file_id)?;
+
+        // prefab instance
+        if transform.header.tag == "stripped" {
+            eprintln!("{}/<unknown prefab instance>", prefix);
+            return Some(());
+        }
+
         let go = self.gameobject(file_id)?;
         let name = go.get_str("m_Name")?;
 
@@ -315,7 +323,9 @@ impl AssetFile {
 
         let transform = self.transform(file_id).expect("failed to get transform");
         for file_id in transform.children()? {
-            self.dbg_object_hierarchy0(&path, file_id)?;
+            if let None = self.dbg_object_hierarchy0(&path, file_id) {
+                error!("failed to print hierarchy, file_id={}", file_id);
+            }
         }
         Some(())
     }

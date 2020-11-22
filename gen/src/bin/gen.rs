@@ -206,7 +206,12 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
     }
 
     if true {
+        // prefab: progress
         idx.dbg_print_hierarchy("1ea564b91575e4d2092ac28fe9dd255e");
+        // prefab: passage
+        idx.dbg_print_hierarchy("335ed0c77db9c4e4087786cb78732ff4");
+        // scene: main
+        idx.dbg_print_hierarchy("1d61e9e0099917e48895931752dc2d78");
     }
 
     info!("took={}ms, danglings={}", sw.elapsed_ms(), danglings_count);
