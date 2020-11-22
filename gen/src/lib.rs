@@ -168,6 +168,52 @@ impl FileInfo {
         importer.assetBundleName.as_ref().map(|s| s.as_str())
     }
 }
+
+struct HierarchyIndex {
+    #[allow(unused)]
+    relations: Vec<(i64, i64)>,
+    roots: Vec<i64>,
+}
+
+impl HierarchyIndex {
+    fn from_asset_file(asset: &AssetFile) -> Self {
+        let mut relations = Vec::new();
+        let mut roots = Vec::new();
+
+        for obj in asset.objects.iter() {
+            // eprintln!("tyname={:?}, file_id={:?}", obj.ty_name, obj.header.file_id);
+            if obj.is_transform() {
+                if let Some(children) = obj.children() {
+                    for child in children {
+                        relations.push((obj.header.file_id, child));
+                    }
+                }
+                let father = obj.father();
+                // eprintln!("father={:?}", father);
+                if father == Some(0) {
+                    eprintln!("root file_id={:?}", obj.header.file_id);
+                    roots.push(obj.header.file_id);
+                }
+            }
+        }
+
+        relations.sort();
+
+        Self { relations, roots }
+    }
+
+    #[allow(unused)]
+    fn children(&self, parent_file_id: i64) -> &[(i64, i64)] {
+        use ordslice::Ext;
+
+        let range = self
+            .relations
+            .equal_range_by(|(src, _dst)| parent_file_id.cmp(&src));
+
+        &self.relations[range]
+    }
+}
+
 #[derive(Debug)]
 pub struct AssetFile {
     pub meta: Option<FileInfo>,
@@ -236,11 +282,13 @@ impl AssetFile {
 
     pub fn transform<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
         let go = self.gameobject(file_id)?;
+        trace!("go={:?}", go.header.file_id);
         let components = go.components()?;
+        trace!("components={:?}", components);
 
         for file_id in components {
             if let Some(component) = self.object_by_file_id(file_id) {
-                if component.ty_name == object::TY_TRANSFORM {
+                if component.is_transform() {
                     return Some(component);
                 }
             } else {
@@ -258,19 +306,26 @@ impl AssetFile {
         // find GameObject first
     }
 
+    fn dbg_object_hierarchy0(&self, prefix: &str, file_id: i64) -> Option<()> {
+        let go = self.gameobject(file_id)?;
+        let name = go.get_str("m_Name")?;
+
+        let path = format!("{}/{}", prefix, name);
+        eprintln!("{}", path);
+
+        let transform = self.transform(file_id).expect("failed to get transform");
+        for file_id in transform.children()? {
+            self.dbg_object_hierarchy0(&path, file_id)?;
+        }
+        Some(())
+    }
+
     pub fn dbg_object_hierarchy(&self) {
-        let mut transforms = Vec::new();
-        let mut relation = Vec::new();
+        let hierarchy = HierarchyIndex::from_asset_file(self);
 
-        for obj in self.objects.iter() {
-            if obj.ty_name == object::TY_TRANSFORM {
-                if let Some(children) = obj.children() {
-                    for child in children {
-                        relation.push((obj.header.file_id, child));
-                    }
-                }
-
-                transforms.push(obj);
+        for root_file_id in &hierarchy.roots {
+            if let None = self.dbg_object_hierarchy0("", *root_file_id) {
+                error!("failed to print hierarchy, file_id={}", root_file_id);
             }
         }
     }

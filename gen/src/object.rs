@@ -32,8 +32,6 @@ fn try_get_file_id(value: &serde_yaml::Value) -> Option<i64> {
     try_find_value(value, "fileID")?.as_i64()
 }
 
-pub const TY_TRANSFORM: &'static str = "Transform";
-
 impl Object {
     pub fn from_header_body(header: ObjectHeader, body: &str) -> Result<Object> {
         let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
@@ -81,11 +79,53 @@ impl Object {
     }
 
     pub fn components(&self) -> Option<Vec<i64>> {
-        self.references_vec("m_Component")
+        let component = try_find_value(&self.parsed, "m_Component")?;
+        if let serde_yaml::Value::Sequence(ref s) = component {
+            Some(
+                s.iter()
+                    .filter_map(|m| {
+                        let m = match m {
+                            serde_yaml::Value::Mapping(m) => m,
+                            _ => return None,
+                        };
+                        let tup = m.iter().next().expect("empty map");
+                        match tup.0 {
+                            serde_yaml::Value::String(s) => {
+                                assert_eq!(s, "component");
+                            }
+                            _ => {
+                                todo!();
+                            }
+                        };
+                        try_get_file_id(tup.1)
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        }
     }
 
+    // transform
+    pub fn is_transform(&self) -> bool {
+        self.ty_name == "Transform" || self.ty_name == "RectTransform"
+    }
     pub fn children(&self) -> Option<Vec<i64>> {
         self.references_vec("m_Children")
+    }
+
+    pub fn father(&self) -> Option<i64> {
+        let obj = try_find_value(&self.parsed, "m_Father")?;
+        try_get_file_id(obj)
+    }
+
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        let obj = try_find_value(&self.parsed, key)?;
+        if let serde_yaml::Value::String(ref s) = obj {
+            Some(s)
+        } else {
+            None
+        }
     }
 }
 

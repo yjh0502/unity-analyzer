@@ -205,7 +205,7 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
         idx.dbg_print_deps("1d61e9e0099917e48895931752dc2d78");
     }
 
-    if false {
+    if true {
         idx.dbg_print_hierarchy("1ea564b91575e4d2092ac28fe9dd255e");
     }
 

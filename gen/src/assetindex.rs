@@ -333,7 +333,16 @@ impl AssetIndex {
         }
     }
 
-    pub fn dbg_print_hierarchy(&self, _guid: &str) {
-        todo!();
+    fn asset_by_guid(&self, guid: &str) -> Option<&AssetFile> {
+        let path = self.asset_guids.get(guid)?;
+        let asset = self.assets.get(path)?;
+        Some(asset)
+    }
+
+    pub fn dbg_print_hierarchy(&self, guid: &str) -> Option<()> {
+        let asset = self.asset_by_guid(guid)?;
+        info!("dbg_print_hierarchy, guid={}", guid);
+        asset.dbg_object_hierarchy();
+        Some(())
     }
 }
