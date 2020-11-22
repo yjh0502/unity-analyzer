@@ -202,6 +202,10 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
     }
 
     if true {
+        idx.dbg_print_reverse_deps("50ce252a11bf8814899e9e09ae6a86c6");
+    }
+
+    if false {
         idx.dbg_print_deps("1d61e9e0099917e48895931752dc2d78");
     }
 

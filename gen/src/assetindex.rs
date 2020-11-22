@@ -144,8 +144,11 @@ pub struct AssetIndex {
     /// guid -> Path
     asset_guids: HashMap<String, PathBuf>,
 
-    /// sorted forward references, (src, dst) tuple
+    /// sorted forward references, sort by (src_guid, src_file_id)
     forward_refs: Vec<ForwardRef>,
+
+    /// sorted backward references, sort by (dst_guid, dst_file_id)
+    backward_refs: Vec<ForwardRef>,
 }
 
 impl AssetIndex {
@@ -199,10 +202,18 @@ impl AssetIndex {
                 }
             }
         }
-        let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
 
-        trace!("forward_refs.len()={:?}", forward_refs.len());
+        let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
+        let mut backward_refs = forward_refs.clone();
+
+        trace!("refs.len()={:?}", forward_refs.len());
         forward_refs.sort();
+        backward_refs.sort_by(|a, b| {
+            a.dst_guid
+                .cmp(&b.dst_guid)
+                .then(a.dst_file_id.cmp(&b.dst_file_id))
+        });
+
         let elapsed_ref = sw.elapsed_ms();
 
         // guid to path mapping
@@ -231,17 +242,26 @@ impl AssetIndex {
             assets,
             asset_guids,
             forward_refs,
+            backward_refs,
         })
     }
 
-    pub fn forward_refs(&self, src: &str) -> &[ForwardRef] {
+    pub fn forward_refs(&self, src_guid: &str) -> &[ForwardRef] {
         use ordslice::Ext;
-
         let range = self
             .forward_refs
-            .equal_range_by(|forward_ref| forward_ref.src_guid.as_str().cmp(src));
+            .equal_range_by(|r| r.src_guid.as_str().cmp(src_guid));
 
         &self.forward_refs[range]
+    }
+
+    pub fn backward_refs(&self, dst_guid: &str) -> &[ForwardRef] {
+        use ordslice::Ext;
+        let range = self
+            .backward_refs
+            .equal_range_by(|r| r.dst_guid.as_str().cmp(dst_guid));
+
+        &self.backward_refs[range]
     }
 
     pub fn danglings(&self) -> Result<Vec<PathBuf>> {
@@ -319,6 +339,38 @@ impl AssetIndex {
             .strip_prefix(&self.root)
             .expect("failed to strip prefix");
         stripped.to_string_lossy().to_string()
+    }
+
+    fn try_asset_path_by_guid(&self, guid: &str) -> Option<&PathBuf> {
+        match self.asset_guids.get(guid) {
+            Some(path) => Some(path),
+            None => {
+                warn!(
+                        "guid not found in index, maybr missing reference or package dependency: guid={}",
+                        guid
+                    );
+                None
+            }
+        }
+    }
+
+    pub fn dbg_print_reverse_deps(&self, guid: &str) {
+        let refs = self.backward_refs(guid);
+
+        for r in refs {
+            trace!("ref={:?}", r);
+            let path = match self.try_asset_path_by_guid(&r.src_guid) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let asset_file = &self.assets[path];
+            let hierarchy_path = asset_file
+                .dbg_transform_path(r.src_file_id)
+                .unwrap_or_else(|| "<todo_unknown_path>".to_owned());
+
+            eprintln!("{} (from={})", self.asset_path_str(path), hierarchy_path);
+        }
     }
 
     pub fn dbg_print_deps(&self, guid: &str) {
