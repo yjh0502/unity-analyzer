@@ -6,7 +6,7 @@ use std::path::*;
 
 use super::*;
 
-const IGNORE_EXTS: &[&str] = &["a", "so", "cs", "aar", "jar", "dll", "xml"];
+const IGNORE_EXTS: &[&str] = &["a", "so", "aar", "jar", "dll", "xml"];
 
 fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
     trace!("file={}", path.display());
@@ -201,7 +201,7 @@ impl AssetIndex {
         }
         let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
 
-        trace!("forward_refs={:?}", forward_refs.len());
+        trace!("forward_refs.len()={:?}", forward_refs.len());
         forward_refs.sort();
         let elapsed_ref = sw.elapsed_ms();
 
@@ -234,12 +234,12 @@ impl AssetIndex {
         })
     }
 
-    pub fn forward_refs(&self, src: String) -> &[ForwardRef] {
+    pub fn forward_refs(&self, src: &str) -> &[ForwardRef] {
         use ordslice::Ext;
 
         let range = self
             .forward_refs
-            .equal_range_by(|forward_ref| forward_ref.src_guid.cmp(&src));
+            .equal_range_by(|forward_ref| forward_ref.src_guid.as_str().cmp(src));
 
         &self.forward_refs[range]
     }
@@ -289,7 +289,7 @@ impl AssetIndex {
         while let Some(item) = queue.pop() {
             visited.insert(item.clone());
 
-            for forward_ref in self.forward_refs(item) {
+            for forward_ref in self.forward_refs(&item) {
                 let dst = &forward_ref.dst_guid;
                 if visited.contains(dst) {
                     continue;
@@ -326,21 +326,50 @@ impl AssetIndex {
         let mut q = std::collections::VecDeque::new();
 
         // initial GUID
-        q.push_back((0, guid.to_owned()));
+        q.push_back((0, "<root>".to_owned(), guid.to_owned()));
         visited.insert(guid.to_owned());
 
-        while let Some((depth, guid)) = q.pop_front() {
-            if let Some(path) = self.asset_guids.get(&guid) {
-                for _ in 0..depth {
-                    eprint!("  ");
-                }
-                eprintln!("{}", self.asset_path_str(path));
-            }
+        while let Some((depth, src_path, guid)) = q.pop_front() {
+            trace!("guid={}", guid);
 
-            for forward_ref in self.forward_refs(guid) {
-                let dst = &forward_ref.dst_guid;
-                if visited.insert(dst.to_owned()) {
-                    q.push_front((depth + 1, dst.to_owned()));
+            let path = match self.asset_guids.get(&guid) {
+                Some(path) => path,
+                None => {
+                    warn!(
+                        "guid not found in index, may missing reference, or in package: guid={}",
+                        guid
+                    );
+                    continue;
+                }
+            };
+
+            for _ in 0..depth {
+                eprint!("  ");
+            }
+            eprintln!("{} (from={})", self.asset_path_str(&path), src_path);
+
+            let src_asset_file = self.asset_by_guid(&guid).unwrap();
+
+            for forward_ref in self.forward_refs(&guid) {
+                let dst_guid = &forward_ref.dst_guid;
+                /*
+                let asset_file = match self.asset_by_guid(dst_guid) {
+                    Some(asset) => asset,
+                    None => {
+                        debug!("unknown guid={}", dst_guid);
+                        continue;
+                    }
+                };
+                */
+
+                trace!("ref={:?}", forward_ref);
+                let src_path = src_asset_file
+                    .dbg_transform_path(forward_ref.src_file_id)
+                    .unwrap_or_else(|| "<unkown_root>".to_owned());
+                trace!("path={}", src_path);
+
+                if visited.insert(dst_guid.to_owned()) {
+                    q.push_front((depth + 1, src_path, dst_guid.to_owned()));
                 }
             }
         }

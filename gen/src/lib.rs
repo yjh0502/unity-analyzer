@@ -269,6 +269,7 @@ impl AssetFile {
     }
 
     pub fn object_by_file_id<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+        trace!("object_by_file_id id={}", file_id);
         let idx = self.file_id_indices[&file_id];
         let obj = &self.objects[idx];
         Some(obj)
@@ -276,11 +277,16 @@ impl AssetFile {
 
     pub fn gameobject<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
         let obj = self.object_by_file_id(file_id)?;
-        let go = obj.gameobject()?;
-        self.object_by_file_id(go)
+        let go_file_id = obj.gameobject()?;
+        if go_file_id == 0 {
+            // TODO: m_GameObject.fileID == 0. m_PrefabInstance.fileID should be used
+            return None;
+        }
+        self.object_by_file_id(go_file_id)
     }
 
     pub fn transform<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+        trace!("transform file_id={}", file_id);
         let go = self.gameobject(file_id)?;
         trace!("go={:?}", go.header.file_id);
         let components = go.components()?;
@@ -300,7 +306,19 @@ impl AssetFile {
     }
 
     pub fn dbg_transform_path(&self, file_id: i64) -> Option<String> {
+        // in case of stripped file, m_GameObject.fileID == 0 and following rule should be applied
+        //  - find prefab instance file with m_PrefabInstance.fileID
+        //  - find parent transform from PrefabInstance.m_Modification.m_TransformParent.fileID
+        if file_id == 0 {
+            return Some("<todo_prefab_instance>".to_owned());
+        }
+        // FILE_ID_ALIAS_PREFAB_ROOT
+        if file_id == 100100000 {
+            return Some("<todo_prefab_root>".to_owned());
+        }
+
         // find GameObject first
+        trace!("dbg_transform_path id={}", file_id);
         let mut transform = self.transform(file_id)?;
 
         let mut path = Vec::new();
@@ -313,6 +331,7 @@ impl AssetFile {
             if father_id == 0 {
                 break;
             }
+            trace!("father_id={}", father_id);
             transform = self.object_by_file_id(father_id)?;
         }
 
