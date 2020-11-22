@@ -336,7 +336,7 @@ impl AssetIndex {
                 Some(path) => path,
                 None => {
                     warn!(
-                        "guid not found in index, may missing reference, or in package: guid={}",
+                        "guid not found in index, maybr missing reference or package dependency: guid={}",
                         guid
                     );
                     continue;
