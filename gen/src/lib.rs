@@ -10,6 +10,7 @@ use std::{
 };
 use stopwatch::Stopwatch;
 
+pub mod assetindex;
 pub mod object;
 pub mod objectheader;
 pub mod typegen;
