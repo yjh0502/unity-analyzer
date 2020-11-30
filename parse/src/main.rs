@@ -14,7 +14,7 @@ fn main() -> Result<()> {
         .map(|file| -> Result<()> {
             debug!("file={}", file);
 
-            let buf = gen::YamlBuf::from_filename(&file)?;
+            let buf = gen::YamlBuf::from_path(&file)?;
             for res in buf.iter() {
                 let (_key, body) = res?;
                 let _parsed = unity_yaml::Root::from_str(body);

@@ -181,12 +181,14 @@ impl AssetIndex {
         let sw = Stopwatch::start_new();
         let mut refs = HashSet::new();
         let mut num_objects = 0;
+        let mut total_len = 0;
         for (_path, asset) in assets.iter() {
             let src_guid = match &asset.meta {
                 Some(meta) => meta.guid.clone(),
                 None => String::new(),
             };
 
+            total_len += asset.text_len;
             num_objects += asset.objects.len();
 
             for object in &asset.objects {
@@ -228,9 +230,11 @@ impl AssetIndex {
             .collect();
 
         info!(
-            "assets={}/{}ms, meta={}ms, objects={}, refs={}/{}ms",
+            "assets={}/{}ms ({}, {}/s), meta={}ms, objects={}, refs={}/{}ms",
             assets.len(),
             elapsed_assets,
+            bytesize::ByteSize::b(total_len as u64),
+            bytesize::ByteSize::b(total_len as u64 * 1000 / elapsed_assets as u64),
             elapsed_meta,
             num_objects,
             forward_refs.len(),
@@ -427,7 +431,7 @@ impl AssetIndex {
         }
     }
 
-    fn asset_by_guid(&self, guid: &str) -> Option<&AssetFile> {
+    pub fn asset_by_guid(&self, guid: &str) -> Option<&AssetFile> {
         let path = self.asset_guids.get(guid)?;
         let asset = self.assets.get(path)?;
         Some(asset)
@@ -438,5 +442,13 @@ impl AssetIndex {
         info!("dbg_print_hierarchy, guid={}", guid);
         asset.dbg_object_hierarchy();
         Some(())
+    }
+
+    pub fn dbg_stats(&self) -> String {
+        format!(
+            "assets={} refs={}",
+            self.assets.len(),
+            self.forward_refs.len()
+        )
     }
 }

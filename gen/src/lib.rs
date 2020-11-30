@@ -25,7 +25,7 @@ pub struct YamlBuf {
 }
 
 impl YamlBuf {
-    pub fn from_filename<P: AsRef<std::path::Path>>(filename: P) -> Result<Self> {
+    pub fn from_path<P: AsRef<std::path::Path>>(filename: P) -> Result<Self> {
         let file = File::open(&filename)?;
         let mut file = BufReader::new(file);
 
@@ -34,6 +34,10 @@ impl YamlBuf {
 
         let data = String::from_utf8(buf)?;
         Ok(Self { data })
+    }
+
+    pub fn data_len(&self) -> usize {
+        self.data.len()
     }
 
     pub fn iter(&self) -> YamlIter {
@@ -91,7 +95,7 @@ pub fn extract_types_all(filename: &str, tag: &str) -> Result<HashMap<String, Ty
 pub fn extract_types(filename: &str) -> Result<HashMap<String, Ty>> {
     let sw = Stopwatch::start_new();
 
-    let buf = YamlBuf::from_filename(filename)?;
+    let buf = YamlBuf::from_path(filename)?;
 
     let mut types = HashMap::<String, Ty>::new();
     for res in buf.iter() {
@@ -169,18 +173,19 @@ impl FileInfo {
     }
 }
 
-struct HierarchyIndex {
+#[derive(Default)]
+pub struct HierarchyIndex {
     #[allow(unused)]
     relations: Vec<(i64, i64)>,
     roots: Vec<i64>,
 }
 
 impl HierarchyIndex {
-    fn from_asset_file(asset: &AssetFile) -> Self {
+    fn from_objects(objects: &[Object]) -> Self {
         let mut relations = Vec::new();
         let mut roots = Vec::new();
 
-        for obj in asset.objects.iter() {
+        for obj in objects {
             // eprintln!("tyname={:?}, file_id={:?}", obj.ty_name, obj.header.file_id);
             if obj.is_transform() {
                 if let Some(children) = obj.children() {
@@ -214,13 +219,17 @@ impl HierarchyIndex {
     }
 }
 
-#[derive(Debug)]
 pub struct AssetFile {
     pub meta: Option<FileInfo>,
     pub objects: Vec<Object>,
 
+    pub text_len: usize,
+
     // file_id -> objects idx
     file_id_indices: HashMap<i64, usize>,
+
+    // heirarchy_index
+    pub index: HierarchyIndex,
 }
 
 impl AssetFile {
@@ -228,7 +237,9 @@ impl AssetFile {
         Self {
             meta: Some(meta),
             objects: Vec::new(),
+            text_len: 0,
             file_id_indices: HashMap::new(),
+            index: HierarchyIndex::default(),
         }
     }
 
@@ -237,7 +248,7 @@ impl AssetFile {
         let mut file_id_indices = HashMap::new();
 
         let path = path.as_ref();
-        let buf = YamlBuf::from_filename(path)?;
+        let buf = YamlBuf::from_path(path)?;
         for res in buf.iter() {
             let (_key, body) = res?;
             let header = match ObjectHeader::from_str(_key) {
@@ -254,10 +265,14 @@ impl AssetFile {
             objects.push(obj);
         }
 
+        let index = HierarchyIndex::from_objects(&objects);
+
         Ok(Self {
             meta: None,
             objects,
+            text_len: buf.data_len(),
             file_id_indices,
+            index,
         })
     }
 
@@ -367,12 +382,19 @@ impl AssetFile {
     }
 
     pub fn dbg_object_hierarchy(&self) {
-        let hierarchy = HierarchyIndex::from_asset_file(self);
-
-        for root_file_id in &hierarchy.roots {
+        for root_file_id in &self.index.roots {
             if let None = self.dbg_object_hierarchy0("", *root_file_id) {
                 error!("failed to print hierarchy, file_id={}", root_file_id);
             }
         }
+    }
+
+    pub fn roots(&self) -> &[i64] {
+        &self.index.roots
+    }
+
+    pub fn name_by_file_id(&self, file_id: i64) -> Option<&str> {
+        let go = self.gameobject(file_id)?;
+        go.get_str("m_Name")
     }
 }

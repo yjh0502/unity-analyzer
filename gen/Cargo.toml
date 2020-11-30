@@ -19,3 +19,4 @@ serde_yaml = { path = "../../serde-yaml" }
 stopwatch = "0.0.7"
 walkdir = "2.3.1"
 ordslice = "0.3.0"
+bytesize = "1"

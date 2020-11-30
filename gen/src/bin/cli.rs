@@ -194,11 +194,14 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
 
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
-    let danglings = idx.danglings()?;
-    let danglings_count = danglings.len();
-    let mut file = File::create("dangling.log")?;
-    for path in danglings {
-        write!(&mut file, "{}\n", path.display())?;
+    if false {
+        let danglings = idx.danglings()?;
+        let danglings_count = danglings.len();
+        let mut file = File::create("dangling.log")?;
+        for path in danglings {
+            write!(&mut file, "{}\n", path.display())?;
+        }
+        info!("danglings.len()={}", danglings_count);
     }
 
     if true {
@@ -218,7 +221,7 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
         idx.dbg_print_hierarchy("1d61e9e0099917e48895931752dc2d78");
     }
 
-    info!("took={}ms, danglings={}", sw.elapsed_ms(), danglings_count);
+    info!("took={}ms", sw.elapsed_ms());
     Ok(())
 }
 
