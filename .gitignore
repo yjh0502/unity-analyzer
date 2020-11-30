@@ -6,3 +6,4 @@ metalist
 *.dot
 *.svg
 *.log
+perf.data*
