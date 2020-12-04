@@ -198,20 +198,21 @@ impl InitializedState {
         let nav_state = s.cur_nav_state_mut();
         let list_state = &mut nav_state.list_state;
 
+        let mut move_cursor = |forward: bool| {
+            if let Some(idx) = list_state.selected() {
+                let idx = if forward { idx + 1 } else { idx + len - 1 };
+                list_state.select(Some(idx % len));
+            } else if len > 0 {
+                list_state.select(Some(0));
+            }
+        };
+
         match key {
             Key::Up => {
-                if let Some(idx) = list_state.selected() {
-                    list_state.select(Some((idx + len - 1) % len));
-                } else if len > 0 {
-                    list_state.select(Some(0));
-                }
+                move_cursor(false);
             }
             Key::Down => {
-                if let Some(idx) = list_state.selected() {
-                    list_state.select(Some((idx + 1) % len));
-                } else if len > 0 {
-                    list_state.select(Some(0));
-                }
+                move_cursor(true);
             }
             Key::Left | Key::Esc => {
                 if s.nav_states.len() > 1 {
