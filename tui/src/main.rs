@@ -165,7 +165,7 @@ use tui::text::{Span, Text};
 impl InitializedState {
     fn cur_file(&self) -> Result<&AssetFile> {
         let idx = &self.index;
-        let sample_guid = idx.scene_guids()?.pop().unwrap();
+        let (_path, sample_guid) = idx.scene_guids()?.pop().unwrap();
         let file = idx.asset_by_guid(&sample_guid).unwrap();
         Ok(file)
     }
@@ -245,9 +245,16 @@ impl InitializedState {
 
         let idx = &self.index;
 
+        let file = self.cur_file().unwrap();
+
         // header
         {
-            let text = format!("initialized stats={}", idx.dbg_stats());
+            let filename = idx.try_asset_path_by_guid(&file.guid().unwrap()).unwrap();
+            let text = format!(
+                "initialized path={} stats={}",
+                filename.to_string_lossy(),
+                idx.dbg_stats()
+            );
             f.render_widget(
                 Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
                 chunks[0],
@@ -256,7 +263,6 @@ impl InitializedState {
 
         // body
         {
-            let file = self.cur_file().unwrap();
             let file_ids = self.cur_file_ids().unwrap();
 
             let mut list = Vec::new();

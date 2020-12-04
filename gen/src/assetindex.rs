@@ -268,25 +268,36 @@ impl AssetIndex {
         &self.backward_refs[range]
     }
 
-    pub fn scene_guids(&self) -> Result<Vec<String>> {
-        let file = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
-        let mut list = Vec::new();
+    pub fn scene_guids(&self) -> Result<Vec<(String, String)>> {
+        use serde_yaml::Value;
 
-        let prefix = "    guid: ";
+        let path = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
 
-        let f = File::open(&file)?;
-        let reader = std::io::BufReader::new(f);
+        let asset_file = AssetFile::from_path(path)?;
+        let parsed = &asset_file.objects[0].parsed;
 
-        for line in reader.lines() {
-            let line = line?;
+        let get_scenes = || -> Option<Vec<(String, String)>> {
+            let seq = parsed
+                .as_mapping()?
+                .get(&Value::from("m_Scenes"))?
+                .as_sequence()?;
 
-            if line.starts_with(prefix) {
-                let guid = &line[(prefix.len())..];
-                list.push(guid.trim().to_owned());
-            }
+            let v = seq
+                .iter()
+                .filter_map(|item| {
+                    let m = item.as_mapping()?;
+                    let path = m.get(&Value::from("path"))?.as_str()?;
+                    let guid = m.get(&Value::from("guid"))?.as_str()?;
+                    Some((path.to_owned(), guid.to_owned()))
+                })
+                .collect::<Vec<_>>();
+            Some(v)
+        };
+
+        match get_scenes() {
+            Some(v) => Ok(v),
+            None => bail!("failed to list scenes"),
         }
-
-        Ok(list)
     }
 
     pub fn danglings(&self) -> Result<Vec<PathBuf>> {
@@ -294,7 +305,11 @@ impl AssetIndex {
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
 
         let mut visited = HashSet::new();
-        let mut queue = self.scene_guids()?;
+        let mut queue = self
+            .scene_guids()?
+            .into_iter()
+            .map(|(_path, guid)| guid)
+            .collect::<Vec<_>>();
 
         for (path, asset) in &self.assets {
             // handle resources (run-time loadable assets)
@@ -350,7 +365,7 @@ impl AssetIndex {
         stripped.to_string_lossy().to_string()
     }
 
-    fn try_asset_path_by_guid(&self, guid: &str) -> Option<&PathBuf> {
+    pub fn try_asset_path_by_guid(&self, guid: &str) -> Option<&PathBuf> {
         match self.asset_guids.get(guid) {
             Some(path) => Some(path),
             None => {
