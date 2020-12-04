@@ -393,7 +393,10 @@ impl AssetFile {
         match parent_file_id {
             None => Ok(self.index.roots.clone()),
             Some(file_id) => {
-                let transform = self.transform(file_id).expect("failed to get transform");
+                let transform = match self.transform(file_id) {
+                    Some(t) => t,
+                    None => return Ok(Vec::new()),
+                };
                 let res = match transform.children() {
                     Some(children) => children,
                     None => Vec::new(),

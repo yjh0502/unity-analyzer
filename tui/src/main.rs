@@ -169,6 +169,11 @@ impl InitializedState {
         file.by_parent(self.parent_file_id())
     }
 
+    fn child_count(&self, file_id: i64) -> Result<usize> {
+        let file = self.cur_file()?;
+        file.by_parent(Some(file_id)).map(|l| l.len())
+    }
+
     fn handle_input(&mut self, key: termion::event::Key) {
         use termion::event::Key;
 
@@ -191,13 +196,16 @@ impl InitializedState {
                     s.list_state.select(Some(0));
                 }
             }
-            Key::Esc => {
+            Key::Left | Key::Esc => {
                 s.parent_file_ids.pop();
             }
-            Key::Char('\n') => {
+            Key::Right | Key::Char('\n') => {
                 if let Some(idx) = s.list_state.selected() {
                     let selected = file_ids[idx];
-                    s.parent_file_ids.push(selected);
+
+                    if s.child_count(selected).unwrap() > 0 {
+                        s.parent_file_ids.push(selected);
+                    }
                 }
                 //
             }
@@ -234,8 +242,13 @@ impl InitializedState {
             let mut list = Vec::new();
             for file_id in file_ids {
                 let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
+                let child_count = file.by_parent(Some(file_id)).map(|v| v.len()).unwrap_or(0);
 
-                list.push(ListItem::new(name.to_owned()));
+                if child_count == 0 {
+                    list.push(ListItem::new(name.to_owned()));
+                } else {
+                    list.push(ListItem::new(format!("{} ({})", name, child_count)));
+                }
             }
 
             let items = List::new(list)
