@@ -52,7 +52,7 @@ mod input {
         fn default() -> Config {
             Config {
                 exit_key: Key::Char('q'),
-                tick_rate: Duration::from_millis(250),
+                tick_rate: Duration::from_millis(50),
             }
         }
     }
@@ -132,7 +132,7 @@ struct InitializedState {
     index: assetindex::AssetIndex,
     list_state: ListState,
 
-    parent_file_id: Option<i64>,
+    parent_file_ids: Vec<i64>,
 }
 
 impl InitializedState {
@@ -143,7 +143,7 @@ impl InitializedState {
         Self {
             index,
             list_state,
-            parent_file_id: None,
+            parent_file_ids: Vec::new(),
         }
     }
 }
@@ -160,16 +160,21 @@ impl InitializedState {
         Ok(file)
     }
 
+    fn parent_file_id(&self) -> Option<i64> {
+        self.parent_file_ids.last().cloned()
+    }
+
     fn cur_file_ids(&self) -> Result<Vec<i64>> {
         let file = self.cur_file()?;
-        file.by_parent(self.parent_file_id)
+        file.by_parent(self.parent_file_id())
     }
 
     fn handle_input(&mut self, key: termion::event::Key) {
         use termion::event::Key;
 
         let s = self;
-        let len = s.cur_file_ids().unwrap().len();
+        let file_ids = s.cur_file_ids().unwrap();
+        let len = file_ids.len();
 
         match key {
             Key::Up => {
@@ -185,6 +190,16 @@ impl InitializedState {
                 } else if len > 0 {
                     s.list_state.select(Some(0));
                 }
+            }
+            Key::Esc => {
+                s.parent_file_ids.pop();
+            }
+            Key::Char('\n') => {
+                if let Some(idx) = s.list_state.selected() {
+                    let selected = file_ids[idx];
+                    s.parent_file_ids.push(selected);
+                }
+                //
             }
             _ => (),
         }
