@@ -128,22 +128,32 @@ struct TopLevel {
     project_path: String,
 }
 
-struct InitializedState {
-    index: assetindex::AssetIndex,
+struct NavState {
     list_state: ListState,
-
-    parent_file_ids: Vec<i64>,
+    parent_file_id: Option<i64>,
 }
-
-impl InitializedState {
-    fn from_index(index: assetindex::AssetIndex) -> Self {
+impl NavState {
+    fn new(parent_file_id: Option<i64>) -> NavState {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
 
         Self {
-            index,
             list_state,
-            parent_file_ids: Vec::new(),
+            parent_file_id,
+        }
+    }
+}
+
+struct InitializedState {
+    index: assetindex::AssetIndex,
+    nav_states: Vec<NavState>,
+}
+
+impl InitializedState {
+    fn from_index(index: assetindex::AssetIndex) -> Self {
+        Self {
+            index,
+            nav_states: vec![NavState::new(None)],
         }
     }
 }
@@ -161,7 +171,11 @@ impl InitializedState {
     }
 
     fn parent_file_id(&self) -> Option<i64> {
-        self.parent_file_ids.last().cloned()
+        self.nav_states.last().and_then(|s| s.parent_file_id)
+    }
+
+    fn cur_nav_state_mut(&mut self) -> &mut NavState {
+        self.nav_states.last_mut().unwrap()
     }
 
     fn cur_file_ids(&self) -> Result<Vec<i64>> {
@@ -181,30 +195,35 @@ impl InitializedState {
         let file_ids = s.cur_file_ids().unwrap();
         let len = file_ids.len();
 
+        let nav_state = s.cur_nav_state_mut();
+        let list_state = &mut nav_state.list_state;
+
         match key {
             Key::Up => {
-                if let Some(idx) = s.list_state.selected() {
-                    s.list_state.select(Some((idx + len - 1) % len));
+                if let Some(idx) = list_state.selected() {
+                    list_state.select(Some((idx + len - 1) % len));
                 } else if len > 0 {
-                    s.list_state.select(Some(0));
+                    list_state.select(Some(0));
                 }
             }
             Key::Down => {
-                if let Some(idx) = s.list_state.selected() {
-                    s.list_state.select(Some((idx + 1) % len));
+                if let Some(idx) = list_state.selected() {
+                    list_state.select(Some((idx + 1) % len));
                 } else if len > 0 {
-                    s.list_state.select(Some(0));
+                    list_state.select(Some(0));
                 }
             }
             Key::Left | Key::Esc => {
-                s.parent_file_ids.pop();
+                if s.nav_states.len() > 1 {
+                    s.nav_states.pop();
+                }
             }
             Key::Right | Key::Char('\n') => {
-                if let Some(idx) = s.list_state.selected() {
+                if let Some(idx) = list_state.selected() {
                     let selected = file_ids[idx];
 
                     if s.child_count(selected).unwrap() > 0 {
-                        s.parent_file_ids.push(selected);
+                        s.nav_states.push(NavState::new(Some(selected)));
                     }
                 }
                 //
@@ -255,7 +274,7 @@ impl InitializedState {
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD))
                 .highlight_symbol(">");
 
-            f.render_stateful_widget(items, chunks[1], &mut self.list_state);
+            f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state);
         }
     }
 }
