@@ -240,7 +240,7 @@ impl InitializedState {
     {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Length(2), Constraint::Min(0)].as_ref())
             .split(rect);
 
         let idx = &self.index;
@@ -249,12 +249,13 @@ impl InitializedState {
 
         // header
         {
-            let filename = idx.try_asset_path_by_guid(&file.guid().unwrap()).unwrap();
-            let text = format!(
-                "initialized path={} stats={}",
-                filename.to_string_lossy(),
-                idx.dbg_stats()
-            );
+            let filename = file
+                .guid()
+                .and_then(|guid| idx.try_asset_path_by_guid(&guid))
+                .and_then(|p| p.to_str())
+                .unwrap_or("<unknown>");
+
+            let text = format!("initialized path={} stats={}", filename, idx.dbg_stats());
             f.render_widget(
                 Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
                 chunks[0],
