@@ -135,6 +135,19 @@ struct InitializedState {
     parent_file_id: Option<i64>,
 }
 
+impl InitializedState {
+    fn from_index(index: assetindex::AssetIndex) -> Self {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+
+        Self {
+            index,
+            list_state,
+            parent_file_id: None,
+        }
+    }
+}
+
 enum State {
     Uninitialized,
     #[allow(dead_code)]
@@ -219,15 +232,7 @@ fn main() -> Result<()> {
 
     if true {
         let index = assetindex::AssetIndex::from_path(&args.project_path)?;
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-
-        let s = InitializedState {
-            index,
-            list_state,
-            parent_file_id: None,
-        };
-        state = State::Initialized(s);
+        state = State::Initialized(InitializedState::from_index(index));
     }
 
     loop {
