@@ -148,6 +148,51 @@ impl InitializedState {
     }
 }
 
+use tui::layout::*;
+use tui::style::*;
+use tui::text::{Span, Text};
+
+impl InitializedState {
+    fn render<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
+    where
+        B: tui::backend::Backend,
+    {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)].as_ref())
+            .split(rect);
+
+        let idx = &self.index;
+
+        let sample_guid = idx.scene_guids().unwrap().pop().unwrap();
+        let file = idx.asset_by_guid(&sample_guid).unwrap();
+        let file_ids = file.by_parent(self.parent_file_id).unwrap();
+
+        // header
+        {
+            let text = format!("initialized stats={}", idx.dbg_stats());
+            f.render_widget(
+                Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
+                chunks[0],
+            );
+        }
+
+        // body
+        let mut list = Vec::new();
+        for file_id in file_ids {
+            let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
+
+            list.push(ListItem::new(name.to_owned()));
+        }
+
+        let items = List::new(list)
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol(">");
+
+        f.render_stateful_widget(items, chunks[1], &mut self.list_state);
+    }
+}
+
 enum State {
     Uninitialized,
     #[allow(dead_code)]
@@ -161,54 +206,17 @@ impl State {
     where
         B: tui::backend::Backend,
     {
-        use tui::layout::*;
-        use tui::text::{Span, Text};
-
         let size = f.size();
 
         let block = Block::default().title("Block").borders(Borders::ALL);
         let inner = block.inner(size);
         f.render_widget(block, size);
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(0)].as_ref())
-            .split(inner);
-
         let body = match self {
             State::Uninitialized => Span::raw("uninitialized"),
             State::Initializing => Span::raw("initializing"),
             State::Initialized(ref mut s) => {
-                use tui::style::*;
-
-                let idx = &s.index;
-
-                let sample_guid = idx.scene_guids().unwrap().pop().unwrap();
-                let file = idx.asset_by_guid(&sample_guid).unwrap();
-                let file_ids = file.by_parent(s.parent_file_id).unwrap();
-
-                // header
-                {
-                    let text = format!("initialized stats={}", idx.dbg_stats());
-                    f.render_widget(
-                        Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
-                        chunks[0],
-                    );
-                }
-
-                // body
-                let mut list = Vec::new();
-                for file_id in file_ids {
-                    let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
-
-                    list.push(ListItem::new(name.to_owned()));
-                }
-
-                let items = List::new(list)
-                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                    .highlight_symbol(">");
-
-                f.render_stateful_widget(items, chunks[1], &mut s.list_state);
+                s.render(f, inner);
                 return;
             }
         };
