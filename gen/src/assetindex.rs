@@ -268,12 +268,33 @@ impl AssetIndex {
         &self.backward_refs[range]
     }
 
+    pub fn scene_guids(&self) -> Result<Vec<String>> {
+        let file = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
+        let mut list = Vec::new();
+
+        let prefix = "    guid: ";
+
+        let f = File::open(&file)?;
+        let reader = std::io::BufReader::new(f);
+
+        for line in reader.lines() {
+            let line = line?;
+
+            if line.starts_with(prefix) {
+                let guid = &line[(prefix.len())..];
+                list.push(guid.trim().to_owned());
+            }
+        }
+
+        Ok(list)
+    }
+
     pub fn danglings(&self) -> Result<Vec<PathBuf>> {
         let resources_dir = Path::join(&self.root, "Assets/Resources");
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
 
         let mut visited = HashSet::new();
-        let mut queue = Vec::new();
+        let mut queue = self.scene_guids()?;
 
         for (path, asset) in &self.assets {
             // handle resources (run-time loadable assets)
@@ -290,22 +311,6 @@ impl AssetIndex {
                     if let Some(guid) = asset.guid() {
                         queue.push(guid);
                     }
-                }
-            }
-        }
-
-        {
-            // temp...
-            let file = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
-            let prefix = "    guid: ";
-            let f = File::open(&file)?;
-            let reader = std::io::BufReader::new(f);
-            for line in reader.lines() {
-                let line = line?;
-
-                if line.starts_with(prefix) {
-                    let guid = &line[(prefix.len())..];
-                    queue.push(guid.trim().to_owned());
                 }
             }
         }

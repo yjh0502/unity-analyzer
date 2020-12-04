@@ -128,46 +128,72 @@ struct TopLevel {
     project_path: String,
 }
 
+struct InitializedState {
+    index: assetindex::AssetIndex,
+    list_state: ListState,
+}
+
 enum State {
     Uninitialized,
     #[allow(dead_code)]
     Initializing,
     #[allow(dead_code)]
-    Initialized(assetindex::AssetIndex),
+    Initialized(InitializedState),
 }
 
 impl State {
-    fn render<B>(&self, f: &mut tui::Frame<B>)
+    fn render<B>(&mut self, f: &mut tui::Frame<B>)
     where
         B: tui::backend::Backend,
     {
+        use tui::layout::*;
         use tui::text::{Span, Text};
+
         let size = f.size();
 
         let block = Block::default().title("Block").borders(Borders::ALL);
         let inner = block.inner(size);
         f.render_widget(block, size);
 
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)].as_ref())
+            .split(inner);
+
         let body = match self {
             State::Uninitialized => Span::raw("uninitialized"),
             State::Initializing => Span::raw("initializing"),
-            State::Initialized(ref idx) => {
-                use std::fmt::Write;
+            State::Initialized(ref mut s) => {
+                use tui::style::*;
 
-                let sample_guid = "1d61e9e0099917e48895931752dc2d78";
-                let file = idx.asset_by_guid(sample_guid).unwrap();
+                let idx = &s.index;
+
+                let sample_guid = idx.scene_guids().unwrap().pop().unwrap();
+                let file = idx.asset_by_guid(&sample_guid).unwrap();
                 let roots = file.roots();
 
-                let mut text = format!("initialized stats={}\n", idx.dbg_stats());
-                for root_file_id in roots {
-                    let name = file.name_by_file_id(*root_file_id).unwrap_or("<unknown>");
-                    write!(&mut text, "root={}\n", name).unwrap();
+                // header
+                {
+                    let text = format!("initialized stats={}", idx.dbg_stats());
+                    f.render_widget(
+                        Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
+                        chunks[0],
+                    );
                 }
 
-                f.render_widget(
-                    Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
-                    inner,
-                );
+                // body
+                let mut list = Vec::new();
+                for root_file_id in roots {
+                    let name = file.name_by_file_id(*root_file_id).unwrap_or("<unknown>");
+
+                    list.push(ListItem::new(name.to_owned()));
+                }
+
+                let items = List::new(list)
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+                    .highlight_symbol(">");
+
+                f.render_stateful_widget(items, chunks[1], &mut s.list_state);
                 return;
             }
         };
@@ -190,8 +216,12 @@ fn main() -> Result<()> {
     let mut state = State::Uninitialized;
 
     if true {
-        let idx = assetindex::AssetIndex::from_path(&args.project_path)?;
-        state = State::Initialized(idx);
+        let index = assetindex::AssetIndex::from_path(&args.project_path)?;
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+
+        let s = InitializedState { index, list_state };
+        state = State::Initialized(s);
     }
 
     loop {
@@ -199,15 +229,20 @@ fn main() -> Result<()> {
 
         use termion::event::Key;
         match events.next()? {
-            Event::Input(Key::Char(ch)) => {
-                if ch == 'r' {
-                    let idx = assetindex::AssetIndex::from_path(&args.project_path)?;
-                    state = State::Initialized(idx);
-                }
+            Event::Input(Key::Char(_ch)) => {
                 //
                 ()
             }
-            Event::Input(_key) => (),
+            Event::Input(Key::Down) => {
+                if let State::Initialized(ref mut s) = state {
+                    let len = s.index.scene_guids()?.len();
+                    if let Some(idx) = s.list_state.selected() {
+                        s.list_state.select(Some((idx + 1) % len));
+                    } else if len > 0 {
+                        s.list_state.select(Some(0));
+                    }
+                }
+            }
             Event::Exit => {
                 break;
             }
