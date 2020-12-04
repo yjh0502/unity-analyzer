@@ -131,6 +131,8 @@ struct TopLevel {
 struct InitializedState {
     index: assetindex::AssetIndex,
     list_state: ListState,
+
+    parent_file_id: Option<i64>,
 }
 
 enum State {
@@ -170,7 +172,7 @@ impl State {
 
                 let sample_guid = idx.scene_guids().unwrap().pop().unwrap();
                 let file = idx.asset_by_guid(&sample_guid).unwrap();
-                let roots = file.roots();
+                let file_ids = file.by_parent(s.parent_file_id).unwrap();
 
                 // header
                 {
@@ -183,8 +185,8 @@ impl State {
 
                 // body
                 let mut list = Vec::new();
-                for root_file_id in roots {
-                    let name = file.name_by_file_id(*root_file_id).unwrap_or("<unknown>");
+                for file_id in file_ids {
+                    let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
 
                     list.push(ListItem::new(name.to_owned()));
                 }
@@ -220,7 +222,11 @@ fn main() -> Result<()> {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
 
-        let s = InitializedState { index, list_state };
+        let s = InitializedState {
+            index,
+            list_state,
+            parent_file_id: None,
+        };
         state = State::Initialized(s);
     }
 

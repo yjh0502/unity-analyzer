@@ -389,6 +389,20 @@ impl AssetFile {
         }
     }
 
+    pub fn by_parent(&self, parent_file_id: Option<i64>) -> Result<Vec<i64>> {
+        match parent_file_id {
+            None => Ok(self.index.roots.clone()),
+            Some(file_id) => {
+                let transform = self.transform(file_id).expect("failed to get transform");
+                let res = match transform.children() {
+                    Some(children) => children,
+                    None => Vec::new(),
+                };
+                Ok(res)
+            }
+        }
+    }
+
     pub fn roots(&self) -> &[i64] {
         &self.index.roots
     }
