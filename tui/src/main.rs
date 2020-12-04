@@ -153,6 +153,44 @@ use tui::style::*;
 use tui::text::{Span, Text};
 
 impl InitializedState {
+    fn cur_file(&self) -> Result<&AssetFile> {
+        let idx = &self.index;
+        let sample_guid = idx.scene_guids()?.pop().unwrap();
+        let file = idx.asset_by_guid(&sample_guid).unwrap();
+        Ok(file)
+    }
+
+    fn cur_file_ids(&self) -> Result<Vec<i64>> {
+        let file = self.cur_file()?;
+        file.by_parent(self.parent_file_id)
+    }
+
+    fn handle_input(&mut self, key: termion::event::Key) {
+        use termion::event::Key;
+
+        let s = self;
+        let len = s.cur_file_ids().unwrap().len();
+
+        match key {
+            Key::Up => {
+                if let Some(idx) = s.list_state.selected() {
+                    s.list_state.select(Some((idx + len - 1) % len));
+                } else if len > 0 {
+                    s.list_state.select(Some(0));
+                }
+            }
+            Key::Down => {
+                if let Some(idx) = s.list_state.selected() {
+                    s.list_state.select(Some((idx + 1) % len));
+                } else if len > 0 {
+                    s.list_state.select(Some(0));
+                }
+            }
+            _ => (),
+        }
+        //
+    }
+
     fn render<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
     where
         B: tui::backend::Backend,
@@ -164,10 +202,6 @@ impl InitializedState {
 
         let idx = &self.index;
 
-        let sample_guid = idx.scene_guids().unwrap().pop().unwrap();
-        let file = idx.asset_by_guid(&sample_guid).unwrap();
-        let file_ids = file.by_parent(self.parent_file_id).unwrap();
-
         // header
         {
             let text = format!("initialized stats={}", idx.dbg_stats());
@@ -178,18 +212,23 @@ impl InitializedState {
         }
 
         // body
-        let mut list = Vec::new();
-        for file_id in file_ids {
-            let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
+        {
+            let file = self.cur_file().unwrap();
+            let file_ids = self.cur_file_ids().unwrap();
 
-            list.push(ListItem::new(name.to_owned()));
+            let mut list = Vec::new();
+            for file_id in file_ids {
+                let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
+
+                list.push(ListItem::new(name.to_owned()));
+            }
+
+            let items = List::new(list)
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+                .highlight_symbol(">");
+
+            f.render_stateful_widget(items, chunks[1], &mut self.list_state);
         }
-
-        let items = List::new(list)
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-            .highlight_symbol(">");
-
-        f.render_stateful_widget(items, chunks[1], &mut self.list_state);
     }
 }
 
@@ -246,20 +285,11 @@ fn main() -> Result<()> {
     loop {
         terminal.draw(|f| state.render(f))?;
 
-        use termion::event::Key;
-        match events.next()? {
-            Event::Input(Key::Char(_ch)) => {
-                //
-                ()
-            }
-            Event::Input(Key::Down) => {
+        let ev = events.next()?;
+        match ev {
+            Event::Input(key) => {
                 if let State::Initialized(ref mut s) = state {
-                    let len = s.index.scene_guids()?.len();
-                    if let Some(idx) = s.list_state.selected() {
-                        s.list_state.select(Some((idx + 1) % len));
-                    } else if len > 0 {
-                        s.list_state.select(Some(0));
-                    }
+                    s.handle_input(key);
                 }
             }
             Event::Exit => {
