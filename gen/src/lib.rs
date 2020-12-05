@@ -358,16 +358,7 @@ impl AssetFile {
     }
 
     fn dbg_object_hierarchy0(&self, prefix: &str, file_id: i64) -> Option<()> {
-        let transform = self.object_by_file_id(file_id)?;
-
-        // prefab instance
-        if transform.header.tag == "stripped" {
-            eprintln!("{}/<unknown prefab instance>", prefix);
-            return Some(());
-        }
-
-        let go = self.gameobject(file_id)?;
-        let name = go.get_str("m_Name")?;
+        let name = self.name_by_file_id(file_id)?;
 
         let path = format!("{}/{}", prefix, name);
         eprintln!("{}", path);
@@ -410,8 +401,66 @@ impl AssetFile {
         &self.index.roots
     }
 
-    pub fn name_by_file_id(&self, file_id: i64) -> Option<&str> {
-        let go = self.gameobject(file_id)?;
-        go.get_str("m_Name")
+    pub fn name_by_file_id(&self, file_id: i64) -> Option<String> {
+        match self.name_by_file_id0(file_id)? {
+            ObjectName::Name(name) => Some(name),
+            ObjectName::Prefab { guid } => {
+                Some(format!("<unknown prefab instance, guid={}>", guid))
+            }
+        }
     }
+
+    pub fn name_by_file_id_ref(
+        &self,
+        file_id: i64,
+        idx: &assetindex::AssetIndex,
+    ) -> Option<String> {
+        match self.name_by_file_id0(file_id)? {
+            ObjectName::Name(name) => Some(name),
+            ObjectName::Prefab { guid } => {
+                let prefab = idx.asset_by_guid(&guid)?;
+
+                let roots = prefab.roots();
+                assert_eq!(roots.len(), 1);
+
+                prefab.name_by_file_id(roots[0])
+            }
+        }
+    }
+
+    pub fn name_by_file_id0(&self, file_id: i64) -> Option<ObjectName> {
+        let transform = self.object_by_file_id(file_id)?;
+
+        // prefab instance
+        let name = if transform.is_prefab_transform() {
+            // find prefab instance
+            let inst_ref = transform
+                .parsed
+                .as_mapping()?
+                .get(&serde_yaml::Value::from("m_PrefabInstance"))?;
+            let file_id = object::try_get_file_id(inst_ref)?;
+            let inst = self.object_by_file_id(file_id)?;
+
+            // find prefab guid from prefab instance
+            let src_ref = inst
+                .parsed
+                .as_mapping()?
+                .get(&serde_yaml::Value::from("m_SourcePrefab"))?;
+            let src_guid = object::try_get_guid(src_ref)?;
+
+            ObjectName::Prefab {
+                guid: src_guid.to_owned(),
+            }
+        } else {
+            let go = self.gameobject(file_id)?;
+            ObjectName::Name(go.get_str("m_Name")?.to_owned())
+        };
+
+        Some(name)
+    }
+}
+
+pub enum ObjectName {
+    Name(String),
+    Prefab { guid: String },
 }

@@ -1,7 +1,10 @@
 use argh::FromArgs;
-use std::io;
+use std::{fmt::Display, io};
 use termion::raw::IntoRawMode;
-use tui::backend::TermionBackend;
+use tui::{
+    backend::TermionBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+};
 
 use tui::widgets::*;
 use tui::Terminal;
@@ -158,7 +161,6 @@ impl InitializedState {
     }
 }
 
-use tui::layout::*;
 use tui::style::*;
 use tui::text::{Span, Text};
 
@@ -268,14 +270,22 @@ impl InitializedState {
 
             let mut list = Vec::new();
             for file_id in file_ids {
-                let name = file.name_by_file_id(file_id).unwrap_or("<unknown>");
+                let is_prefab = file
+                    .object_by_file_id(file_id)
+                    .unwrap()
+                    .is_prefab_transform();
+
+                let name = file
+                    .name_by_file_id_ref(file_id, idx)
+                    .unwrap_or("<unknown>".to_owned());
                 let child_count = file.by_parent(Some(file_id)).map(|v| v.len()).unwrap_or(0);
 
-                if child_count == 0 {
-                    list.push(ListItem::new(name.to_owned()));
-                } else {
-                    list.push(ListItem::new(format!("{} ({})", name, child_count)));
-                }
+                let annotation = Annotation {
+                    is_prefab,
+                    child_count,
+                };
+
+                list.push(ListItem::new(format!("{}{}", name, annotation)));
             }
 
             let items = List::new(list)
@@ -283,6 +293,23 @@ impl InitializedState {
                 .highlight_symbol(">");
 
             f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state);
+        }
+    }
+}
+
+struct Annotation {
+    is_prefab: bool,
+    child_count: usize,
+}
+
+impl Display for Annotation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_prefab {
+            write!(f, " | p")
+        } else if self.child_count > 0 {
+            write!(f, " | c={}", self.child_count)
+        } else {
+            Ok(())
         }
     }
 }
@@ -353,8 +380,6 @@ fn main() -> Result<()> {
             _ => (),
         }
     }
-
-    if false {}
 
     terminal.clear()?;
     terminal.show_cursor()?;

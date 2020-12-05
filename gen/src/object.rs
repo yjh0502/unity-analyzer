@@ -13,10 +13,7 @@ fn try_find_value<'a, 'b>(
     value: &'a serde_yaml::Value,
     key: &'b str,
 ) -> Option<&'a serde_yaml::Value> {
-    let m = match value {
-        serde_yaml::Value::Mapping(m) => m,
-        _ => return None,
-    };
+    let m = value.as_mapping()?;
 
     for (k, v) in m.iter() {
         if let serde_yaml::Value::String(ref key_str) = k {
@@ -28,8 +25,12 @@ fn try_find_value<'a, 'b>(
     None
 }
 
-fn try_get_file_id(value: &serde_yaml::Value) -> Option<i64> {
+pub(crate) fn try_get_file_id(value: &serde_yaml::Value) -> Option<i64> {
     try_find_value(value, "fileID")?.as_i64()
+}
+
+pub(crate) fn try_get_guid(value: &serde_yaml::Value) -> Option<&str> {
+    try_find_value(value, "guid")?.as_str()
 }
 
 impl Object {
@@ -126,6 +127,10 @@ impl Object {
         } else {
             None
         }
+    }
+
+    pub fn is_prefab_transform(&self) -> bool {
+        self.header.tag == "stripped"
     }
 }
 
