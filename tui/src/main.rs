@@ -24,16 +24,18 @@ struct TopLevel {
 
 struct NavState {
     list_state: ListState,
+    file_guid: String,
     parent_file_id: Option<i64>,
 }
 
 impl NavState {
-    fn new(parent_file_id: Option<i64>) -> NavState {
+    fn new(file_guid: String, parent_file_id: Option<i64>) -> NavState {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
 
         Self {
             list_state,
+            file_guid,
             parent_file_id,
         }
     }
@@ -45,10 +47,10 @@ struct InitializedState {
 }
 
 impl InitializedState {
-    fn from_index(index: assetindex::AssetIndex) -> Self {
+    fn new(index: assetindex::AssetIndex, file_guid: String) -> Self {
         Self {
             index,
-            nav_states: vec![NavState::new(None)],
+            nav_states: vec![NavState::new(file_guid, None)],
         }
     }
 }
@@ -59,8 +61,9 @@ use tui::text::{Span, Text};
 impl InitializedState {
     fn cur_file(&self) -> Result<&AssetFile> {
         let idx = &self.index;
-        let (_path, sample_guid) = idx.scene_guids()?.pop().unwrap();
-        let file = idx.asset_by_guid(&sample_guid).unwrap();
+        let state = self.nav_states.last().unwrap();
+
+        let file = idx.asset_by_guid(&state.file_guid).unwrap();
         Ok(file)
     }
 
@@ -90,6 +93,7 @@ impl InitializedState {
         let len = file_ids.len();
 
         let nav_state = s.cur_nav_state_mut();
+        let cur_file_guid = nav_state.file_guid.clone();
         let list_state = &mut nav_state.list_state;
 
         let mut move_cursor = |forward: bool| {
@@ -118,7 +122,8 @@ impl InitializedState {
                     let selected = file_ids[idx];
 
                     if s.child_count(selected).unwrap() > 0 {
-                        s.nav_states.push(NavState::new(Some(selected)));
+                        s.nav_states
+                            .push(NavState::new(cur_file_guid, Some(selected)));
                     }
                 }
                 //
@@ -253,7 +258,9 @@ fn main() -> Result<()> {
 
     if true {
         let index = assetindex::AssetIndex::from_path(&args.project_path)?;
-        state = State::Initialized(InitializedState::from_index(index));
+
+        let (_path, sample_guid) = index.scene_guids()?.pop().unwrap();
+        state = State::Initialized(InitializedState::new(index, sample_guid));
     }
 
     loop {
