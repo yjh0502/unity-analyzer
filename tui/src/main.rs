@@ -85,6 +85,22 @@ impl InitializedState {
         file.by_parent(Some(file_id)).map(|l| l.len())
     }
 
+    fn select_item(&mut self, selected_idx: usize) {
+        let file_ids = self.cur_file_ids().unwrap();
+        let selected = file_ids[selected_idx];
+
+        let cur_file = self.cur_file().unwrap();
+
+        if let Some(guid) = cur_file.prefab_source_guid(selected) {
+            let guid = guid.to_owned();
+            self.nav_states.push(NavState::new(guid, None));
+        // follow prefab?
+        } else if self.child_count(selected).unwrap() > 0 {
+            let guid = cur_file.guid().unwrap();
+            self.nav_states.push(NavState::new(guid, Some(selected)));
+        }
+    }
+
     fn handle_input(&mut self, key: termion::event::Key) {
         use termion::event::Key;
 
@@ -93,7 +109,6 @@ impl InitializedState {
         let len = file_ids.len();
 
         let nav_state = s.cur_nav_state_mut();
-        let cur_file_guid = nav_state.file_guid.clone();
         let list_state = &mut nav_state.list_state;
 
         let mut move_cursor = |forward: bool| {
@@ -119,23 +134,11 @@ impl InitializedState {
             }
             Key::Right | Key::Char('\n') => {
                 if let Some(idx) = list_state.selected() {
-                    let selected = file_ids[idx];
-
-                    let cur_file = s.cur_file().unwrap();
-                    if let Some(guid) = cur_file.prefab_source_guid(selected) {
-                        let guid = guid.to_owned();
-                        s.nav_states.push(NavState::new(guid, None));
-                    // follow prefab?
-                    } else if s.child_count(selected).unwrap() > 0 {
-                        s.nav_states
-                            .push(NavState::new(cur_file_guid, Some(selected)));
-                    }
+                    s.select_item(idx);
                 }
-                //
             }
             _ => (),
         }
-        //
     }
 
     fn render<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
