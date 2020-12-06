@@ -404,9 +404,7 @@ impl AssetFile {
     pub fn name_by_file_id(&self, file_id: i64) -> Option<String> {
         match self.name_by_file_id0(file_id)? {
             ObjectName::Name(name) => Some(name),
-            ObjectName::Prefab { guid } => {
-                Some(format!("<unknown prefab instance, guid={}>", guid))
-            }
+            ObjectName::Prefab { guid } => Some(format!("<prefab instance, guid={}>", guid)),
         }
     }
 

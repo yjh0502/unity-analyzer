@@ -135,6 +135,7 @@ struct NavState {
     list_state: ListState,
     parent_file_id: Option<i64>,
 }
+
 impl NavState {
     fn new(parent_file_id: Option<i64>) -> NavState {
         let mut list_state = ListState::default();
@@ -290,7 +291,7 @@ impl InitializedState {
 
             let items = List::new(list)
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                .highlight_symbol(">");
+                .highlight_symbol("> ");
 
             f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state);
         }
