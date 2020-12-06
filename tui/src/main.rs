@@ -121,7 +121,12 @@ impl InitializedState {
                 if let Some(idx) = list_state.selected() {
                     let selected = file_ids[idx];
 
-                    if s.child_count(selected).unwrap() > 0 {
+                    let cur_file = s.cur_file().unwrap();
+                    if let Some(guid) = cur_file.prefab_source_guid(selected) {
+                        let guid = guid.to_owned();
+                        s.nav_states.push(NavState::new(guid, None));
+                    // follow prefab?
+                    } else if s.child_count(selected).unwrap() > 0 {
                         s.nav_states
                             .push(NavState::new(cur_file_guid, Some(selected)));
                     }

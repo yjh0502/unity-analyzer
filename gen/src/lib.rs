@@ -426,11 +426,10 @@ impl AssetFile {
         }
     }
 
-    pub fn name_by_file_id0(&self, file_id: i64) -> Option<ObjectName> {
+    pub fn prefab_source_guid(&self, file_id: i64) -> Option<&str> {
         let transform = self.object_by_file_id(file_id)?;
 
-        // prefab instance
-        let name = if transform.is_prefab_transform() {
+        if transform.is_prefab_transform() {
             // find prefab instance
             let inst_ref = transform
                 .parsed
@@ -444,10 +443,16 @@ impl AssetFile {
                 .parsed
                 .as_mapping()?
                 .get(&serde_yaml::Value::from("m_SourcePrefab"))?;
-            let src_guid = object::try_get_guid(src_ref)?;
+            object::try_get_guid(src_ref)
+        } else {
+            None
+        }
+    }
 
+    pub fn name_by_file_id0(&self, file_id: i64) -> Option<ObjectName> {
+        let name = if let Some(guid) = self.prefab_source_guid(file_id) {
             ObjectName::Prefab {
-                guid: src_guid.to_owned(),
+                guid: guid.to_owned(),
             }
         } else {
             let go = self.gameobject(file_id)?;
