@@ -178,20 +178,20 @@ impl InitializedState {
         };
 
         match key {
-            Key::Up => {
+            Key::Up | Key::Char('k') => {
                 move_cursor(false);
             }
-            Key::Down => {
+            Key::Down | Key::Char('j') => {
                 move_cursor(true);
             }
-            Key::Left | Key::Esc => {
+            Key::Left | Key::Esc | Key::Char('h') => {
                 if s.popup_state.is_some() {
                     s.popup_state = None;
                 } else if s.nav_states.len() > 1 {
                     s.nav_states.pop();
                 }
             }
-            Key::Right | Key::Char('\n') => {
+            Key::Right | Key::Char('l') | Key::Char('\n') => {
                 if let Some(idx) = list_state.selected() {
                     s.select_item(idx);
                 }
