@@ -4,6 +4,7 @@ use termion::raw::IntoRawMode;
 use tui::{
     backend::TermionBackend,
     layout::{Constraint, Direction, Layout, Rect},
+    text::Spans,
 };
 
 use tui::widgets::*;
@@ -14,6 +15,38 @@ use gen::*;
 type Result<T> = anyhow::Result<T>;
 
 mod input;
+
+mod helper {
+    use tui::layout::{Constraint, Direction, Layout, Rect};
+
+    /// helper function to create a centered rect using up
+    /// certain percentage of the available rect `r`
+    pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+        let popup_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Percentage((100 - percent_y) / 2),
+                    Constraint::Percentage(percent_y),
+                    Constraint::Percentage((100 - percent_y) / 2),
+                ]
+                .as_ref(),
+            )
+            .split(r);
+
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Percentage((100 - percent_x) / 2),
+                    Constraint::Percentage(percent_x),
+                    Constraint::Percentage((100 - percent_x) / 2),
+                ]
+                .as_ref(),
+            )
+            .split(popup_layout[1])[1]
+    }
+}
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "top level")]
@@ -41,9 +74,16 @@ impl NavState {
     }
 }
 
+struct PopupState {
+    file_guid: String,
+    file_id: i64,
+}
+
 struct InitializedState {
     index: assetindex::AssetIndex,
     nav_states: Vec<NavState>,
+
+    popup_state: Option<PopupState>,
 }
 
 impl InitializedState {
@@ -51,6 +91,8 @@ impl InitializedState {
         Self {
             index,
             nav_states: vec![NavState::new(file_guid, None)],
+
+            popup_state: None,
         }
     }
 }
@@ -83,6 +125,21 @@ impl InitializedState {
     fn child_count(&self, file_id: i64) -> Result<usize> {
         let file = self.cur_file()?;
         file.by_parent(Some(file_id)).map(|l| l.len())
+    }
+
+    fn show_detail(&mut self, selected_idx: usize) {
+        if self.popup_state.is_some() {
+            return;
+        }
+
+        let file_ids = self.cur_file_ids().unwrap();
+
+        let nav_state = self.nav_states.last().unwrap();
+        let popup_state = PopupState {
+            file_guid: nav_state.file_guid.to_owned(),
+            file_id: file_ids[selected_idx],
+        };
+        self.popup_state = Some(popup_state);
     }
 
     fn select_item(&mut self, selected_idx: usize) {
@@ -128,13 +185,20 @@ impl InitializedState {
                 move_cursor(true);
             }
             Key::Left | Key::Esc => {
-                if s.nav_states.len() > 1 {
+                if s.popup_state.is_some() {
+                    s.popup_state = None;
+                } else if s.nav_states.len() > 1 {
                     s.nav_states.pop();
                 }
             }
             Key::Right | Key::Char('\n') => {
                 if let Some(idx) = list_state.selected() {
                     s.select_item(idx);
+                }
+            }
+            Key::Char('d') => {
+                if let Some(idx) = list_state.selected() {
+                    s.show_detail(idx);
                 }
             }
             _ => (),
@@ -152,10 +216,9 @@ impl InitializedState {
 
         let idx = &self.index;
 
-        let file = self.cur_file().unwrap();
-
         // header
         {
+            let file = self.cur_file().unwrap();
             let filename = file
                 .guid()
                 .and_then(|guid| idx.try_asset_path_by_guid(&guid))
@@ -171,6 +234,7 @@ impl InitializedState {
 
         // body
         {
+            let file = self.cur_file().unwrap();
             let file_ids = self.cur_file_ids().unwrap();
 
             let mut list = Vec::new();
@@ -198,6 +262,24 @@ impl InitializedState {
                 .highlight_symbol("> ");
 
             f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state);
+        }
+
+        if let Some(ref popup_state) = self.popup_state {
+            let file = self.cur_file().unwrap();
+            let block = Block::default().title("detail").borders(Borders::ALL);
+
+            let area = helper::centered_rect(80, 80, rect);
+
+            let obj = file.object_by_file_id(popup_state.file_id).unwrap();
+
+            let yaml = obj.dbg_yaml().unwrap();
+
+            let spans = yaml.split('\n').map(|s| Spans::from(s)).collect::<Vec<_>>();
+            let p = Paragraph::new(spans);
+
+            f.render_widget(Clear, area); //this clears out the background
+            f.render_widget(p, block.inner(area));
+            f.render_widget(block, area);
         }
     }
 }

@@ -132,6 +132,10 @@ impl Object {
     pub fn is_prefab_transform(&self) -> bool {
         self.header.tag == "stripped"
     }
+
+    pub fn dbg_yaml(&self) -> Result<String> {
+        Ok(serde_yaml::to_string(&self.parsed)?)
+    }
 }
 
 fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result<()> {
