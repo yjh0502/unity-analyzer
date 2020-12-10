@@ -300,7 +300,7 @@ impl AssetIndex {
         }
     }
 
-    pub fn danglings(&self) -> Result<Vec<PathBuf>> {
+    pub fn danglings(&self, conservative: bool) -> Result<Vec<PathBuf>> {
         let resources_dir = Path::join(&self.root, "Assets/Resources");
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
 
@@ -318,6 +318,12 @@ impl AssetIndex {
                     queue.push(guid);
                 }
                 continue;
+            }
+
+            if conservative && path.ends_with(".unity") {
+                if let Some(guid) = asset.guid() {
+                    queue.push(guid);
+                }
             }
 
             if let Some(meta) = &asset.meta {

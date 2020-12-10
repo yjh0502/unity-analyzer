@@ -43,6 +43,9 @@ struct CommandTypeGen {
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "parse", description = "parse")]
 struct CommandParse {
+    #[argh(switch, short = 'c', description = "conservative")]
+    conservative: bool,
+
     #[argh(positional)]
     dir: PathBuf,
 }
@@ -195,7 +198,7 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
     if true {
-        let danglings = idx.danglings()?;
+        let danglings = idx.danglings(v.conservative)?;
         let danglings_count = danglings.len();
         let mut file = File::create("dangling.log")?;
         for path in danglings {
