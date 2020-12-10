@@ -175,6 +175,8 @@ impl AssetIndex {
             .filter_map(try_parse_path)
             .collect::<HashMap<_, _>>();
 
+        sw_step(&mut sw0, "parsing-assets");
+
         // add other assets
         meta_files_list
             .into_iter()
@@ -184,7 +186,7 @@ impl AssetIndex {
             });
         let elapsed_parsing = sw.elapsed_ms();
 
-        sw_step(&mut sw0, "parsing");
+        sw_step(&mut sw0, "parsing-meta");
 
         // tracking file-level intra-dependencies
         let sw = Stopwatch::start_new();
