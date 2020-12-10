@@ -163,7 +163,13 @@ impl AssetIndex {
 
         let mut sw0 = Stopwatch::start_new();
 
-        let files_list = list_files(&assets_dir)?;
+        let files_list = {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            let mut files_list = list_files(&assets_dir)?;
+            files_list.shuffle(&mut rng);
+            files_list
+        };
         let meta_files_list = list_meta_files(&assets_dir)?;
 
         sw_step(&mut sw0, "listing");
