@@ -224,6 +224,9 @@ fn cmd_danglings(v: CommandDanglings) -> Result<()> {
         write!(&mut file, "{}\n", path.display())?;
     }
 
+    // it could took a long time to drop a full index, so just forget it
+    std::mem::forget(idx);
+
     Ok(())
 }
 
