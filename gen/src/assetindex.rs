@@ -9,7 +9,7 @@ use super::*;
 const IGNORE_EXTS: &[&str] = &["a", "so", "aar", "jar", "dll", "xml"];
 
 fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
-    trace!("file={}", path.display());
+    debug!("file={}", path.display());
 
     let is_meta = match path.extension() {
         Some(ext) => ext == "meta",
@@ -218,7 +218,7 @@ impl AssetIndex {
 
         let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
         let mut backward_refs = forward_refs.clone();
-        trace!("refs.len()={:?}", forward_refs.len());
+        debug!("refs.len()={:?}", forward_refs.len());
 
         forward_refs.sort();
         backward_refs.sort_by(|a, b| {
@@ -403,7 +403,6 @@ impl AssetIndex {
         let refs = self.backward_refs(guid);
 
         for r in refs {
-            trace!("ref={:?}", r);
             let path = match self.try_asset_path_by_guid(&r.src_guid) {
                 Some(p) => p,
                 None => continue,
@@ -427,8 +426,6 @@ impl AssetIndex {
         visited.insert(guid.to_owned());
 
         while let Some((depth, src_path, guid)) = q.pop_front() {
-            trace!("guid={}", guid);
-
             let path = match self.asset_guids.get(&guid) {
                 Some(path) => path,
                 None => {
@@ -459,11 +456,9 @@ impl AssetIndex {
                 };
                 */
 
-                trace!("ref={:?}", forward_ref);
                 let src_path = src_asset_file
                     .dbg_transform_path(forward_ref.src_file_id)
                     .unwrap_or_else(|| "<unkown_root>".to_owned());
-                trace!("path={}", src_path);
 
                 if visited.insert(dst_guid.to_owned()) {
                     q.push_front((depth + 1, src_path, dst_guid.to_owned()));
