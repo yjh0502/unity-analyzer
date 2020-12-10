@@ -51,8 +51,11 @@ struct CommandDanglings {
     #[argh(switch, short = 'c', description = "conservative")]
     conservative: bool,
 
-    #[argh(option, description = "include")]
+    #[argh(option, short = 'i', description = "include")]
     include: Vec<String>,
+
+    #[argh(option, short = 'o', description = "output filename")]
+    output: String,
 
     #[argh(positional)]
     dir: PathBuf,
@@ -222,7 +225,7 @@ fn cmd_danglings(v: CommandDanglings) -> Result<()> {
         sw.elapsed_ms()
     );
 
-    let file = File::create("dangling.log")?;
+    let file = File::create(v.output)?;
     let mut file = std::io::BufWriter::new(file);
     for path in danglings {
         write!(&mut file, "{}\n", path.display())?;
