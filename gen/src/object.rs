@@ -1,22 +1,22 @@
 use super::{objectheader::ObjectHeader, *};
 
+// type Yaml = serde_yaml::Value;
+pub type Yaml = yaml_rust::yaml::Yaml;
+
 #[derive(Debug)]
 pub struct Object {
     pub header: ObjectHeader,
     pub references: Vec<Reference>,
     pub ty_name: String,
 
-    pub parsed: serde_yaml::Value,
+    pub parsed: Yaml,
 }
 
-fn try_find_value<'a, 'b>(
-    value: &'a serde_yaml::Value,
-    key: &'b str,
-) -> Option<&'a serde_yaml::Value> {
-    let m = value.as_mapping()?;
+fn try_find_value<'a, 'b>(value: &'a Yaml, key: &'b str) -> Option<&'a Yaml> {
+    let m = value.as_hash()?;
 
     for (k, v) in m.iter() {
-        if let serde_yaml::Value::String(ref key_str) = k {
+        if let Yaml::String(ref key_str) = k {
             if key == key_str {
                 return Some(v);
             }
@@ -25,22 +25,23 @@ fn try_find_value<'a, 'b>(
     None
 }
 
-pub(crate) fn try_get_file_id(value: &serde_yaml::Value) -> Option<i64> {
+pub(crate) fn try_get_file_id(value: &Yaml) -> Option<i64> {
     try_find_value(value, "fileID")?.as_i64()
 }
 
-pub(crate) fn try_get_guid(value: &serde_yaml::Value) -> Option<&str> {
+pub(crate) fn try_get_guid(value: &Yaml) -> Option<&str> {
     try_find_value(value, "guid")?.as_str()
 }
 
 impl Object {
     pub fn from_header_body(header: ObjectHeader, body: &str) -> Result<Object> {
-        let parsed = serde_yaml::from_str::<serde_yaml::Value>(body)?;
-        let (ty_name, parsed) = match parsed {
-            serde_yaml::Value::Mapping(v) => {
+        let mut parsed = yaml_rust::yaml::YamlLoader::load_from_str(body)?;
+
+        let (ty_name, parsed) = match parsed.pop().unwrap() {
+            Yaml::Hash(v) => {
                 assert_eq!(v.len(), 1);
                 match v.into_iter().next().unwrap() {
-                    (serde_yaml::Value::String(s), v) => (s.to_owned(), v),
+                    (Yaml::String(s), v) => (s.to_owned(), v),
                     _ => todo!(),
                 }
             }
@@ -72,7 +73,7 @@ impl Object {
 
     fn references_vec(&self, key: &str) -> Option<Vec<i64>> {
         let component = try_find_value(&self.parsed, key)?;
-        if let serde_yaml::Value::Sequence(ref s) = component {
+        if let Yaml::Array(ref s) = component {
             Some(s.iter().filter_map(try_get_file_id).collect())
         } else {
             None
@@ -81,17 +82,17 @@ impl Object {
 
     pub fn components(&self) -> Option<Vec<i64>> {
         let component = try_find_value(&self.parsed, "m_Component")?;
-        if let serde_yaml::Value::Sequence(ref s) = component {
+        if let Yaml::Array(ref s) = component {
             Some(
                 s.iter()
                     .filter_map(|m| {
                         let m = match m {
-                            serde_yaml::Value::Mapping(m) => m,
+                            Yaml::Hash(m) => m,
                             _ => return None,
                         };
                         let tup = m.iter().next().expect("empty map");
                         match tup.0 {
-                            serde_yaml::Value::String(s) => {
+                            Yaml::String(s) => {
                                 assert_eq!(s, "component");
                             }
                             _ => {
@@ -122,7 +123,7 @@ impl Object {
 
     pub fn get_str(&self, key: &str) -> Option<&str> {
         let obj = try_find_value(&self.parsed, key)?;
-        if let serde_yaml::Value::String(ref s) = obj {
+        if let Yaml::String(ref s) = obj {
             Some(s)
         } else {
             None
@@ -134,15 +135,15 @@ impl Object {
     }
 
     pub fn dbg_yaml(&self) -> Result<String> {
-        Ok(serde_yaml::to_string(&self.parsed)?)
+        todo!();
     }
 }
 
-fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result<()> {
-    use serde_yaml::Value::*;
+fn find_references(node: &Yaml, out: &mut Vec<Reference>) -> Result<()> {
+    use yaml_rust::Yaml::*;
 
     match node {
-        Mapping(v) => {
+        Hash(v) => {
             let mut file_id = None;
             let mut guid = None;
             for (k, v) in v.iter() {
@@ -165,7 +166,7 @@ fn find_references(node: &serde_yaml::Value, out: &mut Vec<Reference>) -> Result
                 }
             }
         }
-        Sequence(v) => {
+        Array(v) => {
             for item in v.iter() {
                 find_references(item, out)?;
             }

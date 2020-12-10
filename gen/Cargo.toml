@@ -15,7 +15,8 @@ rayon = "1.3.1"
 serde = "1.0.114"
 serde_derive = "1.0.114"
 serde-gen = { git = "https://github.com/yjh0502/serde-gen" }
-serde_yaml = { path = "../../serde-yaml" }
+serde_yaml = "0.8"
+yaml-rust = "0.4"
 stopwatch = "0.0.7"
 walkdir = "2.3.1"
 ordslice = "0.3.0"

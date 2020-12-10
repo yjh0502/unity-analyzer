@@ -292,7 +292,7 @@ impl AssetIndex {
     }
 
     pub fn scene_guids(&self) -> Result<Vec<(String, String)>> {
-        use serde_yaml::Value;
+        use object::Yaml;
 
         let path = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
 
@@ -301,16 +301,16 @@ impl AssetIndex {
 
         let get_scenes = || -> Option<Vec<(String, String)>> {
             let seq = parsed
-                .as_mapping()?
-                .get(&Value::from("m_Scenes"))?
-                .as_sequence()?;
+                .as_hash()?
+                .get(&Yaml::from_str("m_Scenes"))?
+                .as_vec()?;
 
             let v = seq
                 .iter()
                 .filter_map(|item| {
-                    let m = item.as_mapping()?;
-                    let path = m.get(&Value::from("path"))?.as_str()?;
-                    let guid = m.get(&Value::from("guid"))?.as_str()?;
+                    let m = item.as_hash()?;
+                    let path = m.get(&Yaml::from_str("path"))?.as_str()?;
+                    let guid = m.get(&Yaml::from_str("guid"))?.as_str()?;
                     Some((path.to_owned(), guid.to_owned()))
                 })
                 .collect::<Vec<_>>();

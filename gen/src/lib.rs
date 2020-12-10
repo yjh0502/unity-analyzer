@@ -441,22 +441,23 @@ impl AssetFile {
     }
 
     pub fn prefab_source_guid(&self, file_id: i64) -> Option<&str> {
+        use yaml_rust::Yaml;
         let transform = self.object_by_file_id(file_id)?;
 
         if transform.is_prefab_transform() {
             // find prefab instance
             let inst_ref = transform
                 .parsed
-                .as_mapping()?
-                .get(&serde_yaml::Value::from("m_PrefabInstance"))?;
+                .as_hash()?
+                .get(&Yaml::from_str("m_PrefabInstance"))?;
             let file_id = object::try_get_file_id(inst_ref)?;
             let inst = self.object_by_file_id(file_id)?;
 
             // find prefab guid from prefab instance
             let src_ref = inst
                 .parsed
-                .as_mapping()?
-                .get(&serde_yaml::Value::from("m_SourcePrefab"))?;
+                .as_hash()?
+                .get(&Yaml::from_str("m_SourcePrefab"))?;
             object::try_get_guid(src_ref)
         } else {
             None

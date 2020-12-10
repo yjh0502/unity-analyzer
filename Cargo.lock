@@ -242,9 +242,10 @@ dependencies = [
  "serde",
  "serde-gen",
  "serde_derive",
- "serde_yaml",
+ "serde_yaml 0.8.14",
  "stopwatch",
  "walkdir",
+ "yaml-rust",
 ]
 
 [[package]]
@@ -478,7 +479,7 @@ dependencies = [
  "serde",
  "serde-gen",
  "serde_derive",
- "serde_yaml",
+ "serde_yaml 0.8.13",
  "stopwatch",
  "unity-yaml",
 ]
@@ -733,6 +734,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.8.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7baae0a99f1a324984bcdc5f0718384c1f69775f1c7eec8b859b71b443e3fd7"
+dependencies = [
+ "dtoa",
+ "linked-hash-map",
+ "serde",
+ "yaml-rust",
+]
+
+[[package]]
 name = "stopwatch"
 version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -845,7 +858,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_derive",
- "serde_yaml",
+ "serde_yaml 0.8.13",
 ]
 
 [[package]]
