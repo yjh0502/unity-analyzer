@@ -15,4 +15,7 @@ find all dangling resources
 
 # mark all '*.unity' scene files and following assets as used
 ./target/release/cli danglings --include '*.unity' -o dangling.log $PROJECT_ROOT
+
+# include 'Plugins' directory, too
+./target/release/cli danglings --include '*.unity' --include 'Assets/Plugins' -o dangling.log $PROJECT_ROOT
 ```
