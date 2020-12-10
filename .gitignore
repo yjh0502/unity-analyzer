@@ -2,7 +2,7 @@
 /out
 filelist
 metalist
-740
+740*
 *.dot
 *.svg
 *.log
