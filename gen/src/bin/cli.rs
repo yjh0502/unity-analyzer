@@ -51,6 +51,9 @@ struct CommandDanglings {
     #[argh(switch, short = 'c', description = "conservative")]
     conservative: bool,
 
+    #[argh(option, description = "include")]
+    include: Vec<String>,
+
     #[argh(positional)]
     dir: PathBuf,
 }
@@ -208,10 +211,11 @@ pub enum Root {{
 }
 
 fn cmd_danglings(v: CommandDanglings) -> Result<()> {
+    info!("include={:?}", v.include);
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
     let sw = Stopwatch::start_new();
-    let danglings = idx.danglings(v.conservative)?;
+    let danglings = idx.danglings(v.include)?;
     info!(
         "danglings: count={}, took={}ms",
         danglings.len(),
@@ -236,7 +240,7 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
     if true {
-        let danglings = idx.danglings(v.conservative)?;
+        let danglings = idx.danglings(Vec::new())?;
         let danglings_count = danglings.len();
         let mut file = File::create("dangling.log")?;
         for path in danglings {

@@ -323,7 +323,7 @@ impl AssetIndex {
         }
     }
 
-    pub fn danglings(&self, conservative: bool) -> Result<Vec<PathBuf>> {
+    pub fn danglings(&self, includes: Vec<String>) -> Result<Vec<PathBuf>> {
         let resources_dir = Path::join(&self.root, "Assets/Resources");
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
 
@@ -334,6 +334,11 @@ impl AssetIndex {
             .map(|(_path, guid)| guid)
             .collect::<Vec<_>>();
 
+        let mut patterns = Vec::new();
+        for pat in includes {
+            patterns.push(glob::Pattern::new(&pat)?);
+        }
+
         for (path, asset) in &self.assets {
             // handle resources (run-time loadable assets)
             if path.starts_with(&resources_dir) || path.starts_with(&streaming_assets_dir) {
@@ -343,9 +348,11 @@ impl AssetIndex {
                 continue;
             }
 
-            if conservative && path.ends_with(".unity") {
-                if let Some(guid) = asset.guid() {
-                    queue.push(guid);
+            for pat in &patterns {
+                if pat.matches_path(&path) {
+                    if let Some(guid) = asset.guid() {
+                        queue.push(guid);
+                    }
                 }
             }
 
