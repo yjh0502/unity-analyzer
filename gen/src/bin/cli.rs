@@ -194,7 +194,7 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
 
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
-    if false {
+    if true {
         let danglings = idx.danglings()?;
         let danglings_count = danglings.len();
         let mut file = File::create("dangling.log")?;
@@ -204,7 +204,7 @@ fn cmd_parse(v: CommandParse) -> Result<()> {
         info!("danglings.len()={}", danglings_count);
     }
 
-    if true {
+    if false {
         idx.dbg_print_reverse_deps("50ce252a11bf8814899e9e09ae6a86c6");
     }
 

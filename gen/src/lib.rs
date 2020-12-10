@@ -151,6 +151,7 @@ pub struct Reference {
 pub struct FileInfo {
     pub guid: String,
     pub NativeFormatImporter: Option<NativeFormatImporter>,
+    pub PrefabImporter: Option<NativeFormatImporter>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -168,8 +169,21 @@ impl FileInfo {
     }
 
     pub fn asset_bundle_name(&self) -> Option<&str> {
-        let importer = self.NativeFormatImporter.as_ref()?;
-        importer.assetBundleName.as_ref().map(|s| s.as_str())
+        if let Some(ref v) = self
+            .NativeFormatImporter
+            .as_ref()
+            .and_then(|v| v.assetBundleName.as_ref())
+        {
+            return Some(v);
+        }
+        if let Some(ref v) = self
+            .PrefabImporter
+            .as_ref()
+            .and_then(|v| v.assetBundleName.as_ref())
+        {
+            return Some(v);
+        }
+        None
     }
 }
 
