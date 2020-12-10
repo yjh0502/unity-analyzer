@@ -218,7 +218,8 @@ fn cmd_danglings(v: CommandDanglings) -> Result<()> {
         sw.elapsed_ms()
     );
 
-    let mut file = File::create("dangling.log")?;
+    let file = File::create("dangling.log")?;
+    let mut file = std::io::BufWriter::new(file);
     for path in danglings {
         write!(&mut file, "{}\n", path.display())?;
     }
