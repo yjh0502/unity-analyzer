@@ -479,7 +479,7 @@ dependencies = [
  "serde",
  "serde-gen",
  "serde_derive",
- "serde_yaml 0.8.13",
+ "serde_yaml 0.8.14",
  "stopwatch",
  "unity-yaml",
 ]
