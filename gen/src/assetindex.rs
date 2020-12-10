@@ -151,13 +151,22 @@ pub struct AssetIndex {
     backward_refs: Vec<ForwardRef>,
 }
 
+fn sw_step(sw: &mut stopwatch::Stopwatch, label: &'static str) {
+    info!("{}: {}ms", label, sw.elapsed_ms());
+    sw.restart();
+}
+
 impl AssetIndex {
     pub fn from_path<P: AsRef<Path>>(root: P) -> Result<Self> {
         let root = root.as_ref();
         let assets_dir = Path::join(root, "Assets");
 
+        let mut sw0 = Stopwatch::start_new();
+
         let files_list = list_files(&assets_dir)?;
         let meta_files_list = list_meta_files(&assets_dir)?;
+
+        sw_step(&mut sw0, "listing");
 
         // add unity-serialized files
         let sw = Stopwatch::start_new();
@@ -165,9 +174,7 @@ impl AssetIndex {
             .into_par_iter()
             .filter_map(try_parse_path)
             .collect::<HashMap<_, _>>();
-        let elapsed_assets = sw.elapsed_ms();
 
-        let sw = Stopwatch::start_new();
         // add other assets
         meta_files_list
             .into_iter()
@@ -175,7 +182,9 @@ impl AssetIndex {
             .for_each(|(path, asset)| {
                 assets.entry(path).or_insert(asset);
             });
-        let elapsed_meta = sw.elapsed_ms();
+        let elapsed_parsing = sw.elapsed_ms();
+
+        sw_step(&mut sw0, "parsing");
 
         // tracking file-level intra-dependencies
         let sw = Stopwatch::start_new();
@@ -205,16 +214,21 @@ impl AssetIndex {
             }
         }
 
+        sw_step(&mut sw0, "analyzing-deps");
+
         let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
         let mut backward_refs = forward_refs.clone();
-
         trace!("refs.len()={:?}", forward_refs.len());
+
         forward_refs.sort();
         backward_refs.sort_by(|a, b| {
             a.dst_guid
                 .cmp(&b.dst_guid)
                 .then(a.dst_file_id.cmp(&b.dst_file_id))
         });
+        info!("analyzing-sort: {}ms", sw.elapsed_ms());
+
+        sw_step(&mut sw0, "analyzing-sort");
 
         let elapsed_ref = sw.elapsed_ms();
 
@@ -229,13 +243,14 @@ impl AssetIndex {
             })
             .collect();
 
+        sw_step(&mut sw0, "analyzing-mapping");
+
         info!(
-            "assets={}/{}ms ({}, {}/s), meta={}ms, objects={}, refs={}/{}ms",
+            "assets={}/{}ms ({}, {}/s), objects={}, refs={}/{}ms",
             assets.len(),
-            elapsed_assets,
+            elapsed_parsing,
             bytesize::ByteSize::b(total_len as u64),
-            bytesize::ByteSize::b(total_len as u64 * 1000 / elapsed_assets as u64),
-            elapsed_meta,
+            bytesize::ByteSize::b(total_len as u64 * 1000 / elapsed_parsing as u64),
             num_objects,
             forward_refs.len(),
             elapsed_ref,

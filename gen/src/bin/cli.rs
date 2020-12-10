@@ -23,6 +23,7 @@ struct TopLevel {
 #[argh(subcommand)]
 enum SubCommands {
     TypeGen(CommandTypeGen),
+    Danglings(CommandDanglings),
     Parse(CommandParse),
     ListFiles(CommandListFiles),
 }
@@ -38,6 +39,20 @@ struct CommandTypeGen {
 
     #[argh(positional)]
     out_filename: String,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(
+    subcommand,
+    name = "danglings",
+    description = "find all dangling resources"
+)]
+struct CommandDanglings {
+    #[argh(switch, short = 'c', description = "conservative")]
+    conservative: bool,
+
+    #[argh(positional)]
+    dir: PathBuf,
 }
 
 #[derive(FromArgs, Debug)]
@@ -192,6 +207,25 @@ pub enum Root {{
     Ok(())
 }
 
+fn cmd_danglings(v: CommandDanglings) -> Result<()> {
+    let idx = assetindex::AssetIndex::from_path(&v.dir)?;
+
+    let sw = Stopwatch::start_new();
+    let danglings = idx.danglings(v.conservative)?;
+    info!(
+        "danglings: count={}, took={}ms",
+        danglings.len(),
+        sw.elapsed_ms()
+    );
+
+    let mut file = File::create("dangling.log")?;
+    for path in danglings {
+        write!(&mut file, "{}\n", path.display())?;
+    }
+
+    Ok(())
+}
+
 fn cmd_parse(v: CommandParse) -> Result<()> {
     let sw = Stopwatch::start_new();
 
@@ -239,12 +273,16 @@ fn cmd_list_files(v: CommandListFiles) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("gen=info,cli=info"),
+    )
+    .init();
 
     let args: TopLevel = argh::from_env();
 
     match args.nested {
         SubCommands::TypeGen(v) => cmd_typegen(v),
+        SubCommands::Danglings(v) => cmd_danglings(v),
         SubCommands::Parse(v) => cmd_parse(v),
         SubCommands::ListFiles(v) => cmd_list_files(v),
     }
