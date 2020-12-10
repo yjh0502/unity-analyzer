@@ -348,10 +348,12 @@ impl AssetIndex {
                 continue;
             }
 
-            for pat in &patterns {
-                if pat.matches_path(&path) {
-                    if let Some(guid) = asset.guid() {
-                        queue.push(guid);
+            if let Ok(postfix) = path.strip_prefix(&self.root) {
+                for pat in &patterns {
+                    if pat.matches_path(postfix) {
+                        if let Some(guid) = asset.guid() {
+                            queue.push(guid);
+                        }
                     }
                 }
             }
