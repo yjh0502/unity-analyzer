@@ -378,7 +378,8 @@ impl AssetIndex {
         for (path, asset) in &self.assets {
             if let Some(meta) = &asset.meta {
                 if !visited.contains(&meta.guid) {
-                    danglings.push(path.clone());
+                    let path = path.strip_prefix(&self.root)?;
+                    danglings.push(path.to_path_buf());
                 }
             }
         }
