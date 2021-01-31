@@ -8,54 +8,7 @@ use stopwatch::Stopwatch;
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
 pub struct UnityYamlFile<'a> {
-    lines: Vec<UnityYamlLine<'a>>,
-}
-
-impl<'a> UnityYamlFile<'a> {
-    pub fn iter(&self) -> UnityYamlFileIter {
-        UnityYamlFileIter {
-            cursor: 0,
-            file: self,
-        }
-    }
-}
-
-pub struct UnityYamlFileIter<'a> {
-    file: &'a UnityYamlFile<'a>,
-
-    cursor: usize,
-}
-
-impl<'a> Iterator for UnityYamlFileIter<'a> {
-    type Item = UnityYamlObject<'a>;
-
-    fn next(&mut self) -> Option<UnityYamlObject<'a>> {
-        if self.cursor >= self.file.lines.len() {
-            return None;
-        }
-
-        let header = match self.file.lines[self.cursor] {
-            UnityYamlLine::Header(ref header) => header,
-            UnityYamlLine::Line(ref line) => {
-                unreachable!("should be header, found={:?}", line);
-            }
-        };
-        self.cursor += 1;
-        let start = self.cursor;
-
-        while self.cursor < self.file.lines.len() {
-            let line = &self.file.lines[self.cursor];
-            if let UnityYamlLine::Header(_) = line {
-                break;
-            }
-            self.cursor += 1;
-        }
-
-        Some(UnityYamlObject {
-            header,
-            lines: &self.file.lines[start..self.cursor],
-        })
-    }
+    pub objects: Vec<UnityYamlObject<'a>>,
 }
 
 /// indent signature
@@ -68,26 +21,31 @@ impl IndentSig {
     fn new(indent: usize, array_elem: bool) -> Self {
         Self { indent, array_elem }
     }
+
+    fn empty() -> Self {
+        Self::new(0, false)
+    }
+
+    fn is_empty(&self) -> bool {
+        *self == Self::empty()
+    }
 }
 
 /// iterate over same indent/array_elem
 #[derive(Clone)]
 pub struct UnityYamlIndentIter<'a> {
     indent: IndentSig,
-    lines: &'a [UnityYamlLine<'a>],
+    lines: &'a [Line<'a>],
 
     cursor: usize,
 }
 
 impl<'a> UnityYamlIndentIter<'a> {
-    fn from_lines(lines: &'a [UnityYamlLine]) -> Self {
+    fn from_lines(lines: &'a [Line]) -> Self {
         let indent = if lines.len() > 0 {
-            lines[0].line_unwrap().indent.clone()
+            lines[0].indent.clone()
         } else {
-            IndentSig {
-                indent: 0,
-                array_elem: false,
-            }
+            IndentSig::empty()
         };
 
         Self {
@@ -106,7 +64,7 @@ impl<'a> Iterator for UnityYamlIndentIter<'a> {
             return None;
         }
 
-        let line = self.lines[self.cursor].line_unwrap();
+        let line = &self.lines[self.cursor];
 
         if line.indent < self.indent {
             return None;
@@ -115,7 +73,7 @@ impl<'a> Iterator for UnityYamlIndentIter<'a> {
         self.cursor += 1;
         let start = self.cursor;
         while self.cursor < self.lines.len() {
-            let line = self.lines[self.cursor].line_unwrap();
+            let line = &self.lines[self.cursor];
             if line.indent <= self.indent {
                 break;
             }
@@ -138,10 +96,7 @@ impl<'a> UnityYaml<'a> {
         self.children
             .lines
             .get(0)
-            .map(|line| {
-                let line = line.line_unwrap();
-                !line.indent.array_elem
-            })
+            .map(|line| !line.indent.array_elem)
             .unwrap_or(false)
     }
 
@@ -149,10 +104,7 @@ impl<'a> UnityYaml<'a> {
         self.children
             .lines
             .get(0)
-            .map(|line| {
-                let line = line.line_unwrap();
-                line.indent.array_elem
-            })
+            .map(|line| line.indent.array_elem)
             .unwrap_or(false)
     }
 
@@ -164,14 +116,14 @@ impl<'a> UnityYaml<'a> {
 #[derive(Debug)]
 pub struct UnityYamlObject<'a> {
     #[allow(unused)]
-    header: &'a ObjectHeader<'a>,
+    header: ObjectHeader<'a>,
     #[allow(unused)]
-    lines: &'a [UnityYamlLine<'a>],
+    lines: Vec<Line<'a>>,
 }
 
 impl<'a> UnityYamlObject<'a> {
-    pub fn iter(&self) -> UnityYamlIndentIter<'a> {
-        UnityYamlIndentIter::from_lines(self.lines)
+    pub fn iter(&'a self) -> UnityYamlIndentIter<'a> {
+        UnityYamlIndentIter::from_lines(&self.lines)
     }
 }
 
@@ -184,25 +136,10 @@ fn debug_print(iter: UnityYamlIndentIter, depth: usize) {
 }
 
 #[derive(Debug)]
-enum UnityYamlLine<'a> {
-    Header(ObjectHeader<'a>),
-    Line(Line<'a>),
-}
-
-impl<'a> UnityYamlLine<'a> {
-    fn line_unwrap(&'a self) -> &'a Line<'a> {
-        if let UnityYamlLine::Line(ref v) = self {
-            v
-        } else {
-            unreachable!();
-        }
-    }
-}
-
-#[derive(Debug)]
 struct ObjectHeader<'a> {
     tag1: &'a str,
     tag2: &'a str,
+    tag3: &'a str,
 }
 
 #[derive(Debug)]
@@ -218,11 +155,18 @@ impl<'a> Line<'a> {
     }
 }
 
-fn parse_chunk_header(i: &str) -> nom::IResult<&str, UnityYamlLine> {
-    let (i, (_, _, tag1, _, tag2, _)) =
-        nom::sequence::tuple((tag("--- "), tag("!u!"), digit1, tag(" &"), digit1, newline))(i)?;
+fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
+    let (i, (_, _, tag1, _, tag2, tag3, _)) = nom::sequence::tuple((
+        tag("--- "),
+        tag("!u!"),
+        digit1,
+        tag(" &"),
+        digit1,
+        alphanumeric0,
+        newline,
+    ))(i)?;
 
-    Ok((i, UnityYamlLine::Header(ObjectHeader { tag1, tag2 })))
+    Ok((i, ObjectHeader { tag1, tag2, tag3 }))
 }
 
 fn key_char(chr: char) -> bool {
@@ -238,7 +182,9 @@ fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
     Ok((i, IndentSig::new(cur_indent.len(), array_elem)))
 }
 
-fn parse_yaml_like(i: &str) -> nom::IResult<&str, UnityYamlLine> {
+fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
+    use nom::error::*;
+
     let (i, (indent, key, _, _, value, _)) = nom::sequence::tuple((
         parse_indent_sig,
         take_while(key_char),
@@ -248,7 +194,22 @@ fn parse_yaml_like(i: &str) -> nom::IResult<&str, UnityYamlLine> {
         newline,
     ))(i)?;
 
-    Ok((i, UnityYamlLine::Line(Line { indent, key, value })))
+    // TODO: perf
+    if indent.is_empty() && key.starts_with("---") {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            "looks like an object header",
+            ErrorKind::Tag,
+        )));
+    }
+
+    Ok((i, Line { indent, key, value }))
+}
+
+fn parse_yaml_object(i: &str) -> nom::IResult<&str, UnityYamlObject> {
+    let (i, (header, lines)) =
+        nom::sequence::tuple((parse_object_header, nom::multi::many1(parse_yaml_like)))(i)?;
+
+    Ok((i, UnityYamlObject { header, lines }))
 }
 
 fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
@@ -262,11 +223,12 @@ fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
 }
 
 fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile> {
-    let (i, _) = parse_file_header(i)?;
+    let (i, (_header, objects)) = nom::combinator::all_consuming(nom::sequence::tuple((
+        parse_file_header,
+        nom::multi::many1(parse_yaml_object),
+    )))(i)?;
 
-    let (i, lines) = nom::multi::many1(nom::branch::alt((parse_chunk_header, parse_yaml_like)))(i)?;
-
-    Ok((i, UnityYamlFile { lines }))
+    Ok((i, UnityYamlFile { objects }))
 }
 
 fn test_parse(input: &str) -> Result<()> {
@@ -274,21 +236,15 @@ fn test_parse(input: &str) -> Result<()> {
     match out {
         Ok((remaining, parsed)) => {
             let remain_clip_len = remaining.len().min(100);
-            debug!(
+            info!(
                 "parsed={:?}, remaining len={}, content={}",
-                parsed.lines.len(),
+                parsed.objects.len(),
                 remaining.len(),
                 &remaining[..remain_clip_len]
             );
-
-            let elem = parsed.iter().skip(1).next().unwrap();
-            debug_print(elem.iter(), 0);
-
-            let count = parsed.iter().count();
-            info!("objects={}", count);
         }
         Err(e) => {
-            debug!("err={:?}", e);
+            error!("err={:?}", e);
         }
     };
     Ok(())
