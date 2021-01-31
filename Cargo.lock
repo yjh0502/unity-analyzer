@@ -523,16 +523,9 @@ dependencies = [
  "anyhow",
  "bytesize",
  "env_logger",
- "gen",
  "log",
  "nom",
- "rayon",
- "serde",
- "serde-gen",
- "serde_derive",
- "serde_yaml",
  "stopwatch",
- "unity-yaml",
 ]
 
 [[package]]
