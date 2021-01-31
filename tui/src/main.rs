@@ -75,6 +75,7 @@ impl NavState {
 }
 
 struct PopupState {
+    #[allow(unused)]
     file_guid: String,
     file_id: i64,
 }
