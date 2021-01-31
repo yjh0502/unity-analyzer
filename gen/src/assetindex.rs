@@ -8,7 +8,7 @@ use super::*;
 
 const IGNORE_EXTS: &[&str] = &["a", "so", "aar", "jar", "dll", "xml"];
 
-fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
+fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile<'static>)> {
     debug!("file={}", path.display());
 
     let is_meta = match path.extension() {
@@ -44,9 +44,13 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile)> {
         return Some((path, AssetFile::from_meta(meta)));
     }
 
-    match AssetFile::from_path(&path) {
+    let content0 = std::fs::read_to_string(&path).ok()?;
+    let content: &'static str = unsafe { std::mem::transmute(content0.as_str()) };
+    std::mem::forget(content0);
+
+    match AssetFile::from_str(&content) {
         Err(e) => {
-            error!("failed to parse file: {:?}", e);
+            error!("failed to parse file filename={:?}, error={:?}", path, e);
             None
         }
         Ok(mut parsed) => {
@@ -139,7 +143,7 @@ pub struct AssetIndex {
     root: PathBuf,
 
     /// path -> AssetFile
-    assets: HashMap<PathBuf, AssetFile>,
+    assets: HashMap<PathBuf, AssetFile<'static>>,
 
     /// guid -> Path
     asset_guids: HashMap<String, PathBuf>,
@@ -292,25 +296,20 @@ impl AssetIndex {
     }
 
     pub fn scene_guids(&self) -> Result<Vec<(String, String)>> {
-        use object::Yaml;
-
         let path = Path::join(&self.root, "ProjectSettings/EditorBuildSettings.asset");
 
-        let asset_file = AssetFile::from_path(path)?;
+        let file_content = std::fs::read_to_string(&path)?;
+        let asset_file = AssetFile::from_str(&file_content)?;
         let parsed = &asset_file.objects[0].parsed;
 
         let get_scenes = || -> Option<Vec<(String, String)>> {
-            let seq = parsed
-                .as_hash()?
-                .get(&Yaml::from_str("m_Scenes"))?
-                .as_vec()?;
+            let seq = try_find_value(&parsed, "m_Scenes")?;
 
             let v = seq
                 .iter()
                 .filter_map(|item| {
-                    let m = item.as_hash()?;
-                    let path = m.get(&Yaml::from_str("path"))?.as_str()?;
-                    let guid = m.get(&Yaml::from_str("guid"))?.as_str()?;
+                    let path = try_find_value(&item, "path")?.as_str()?;
+                    let guid = try_find_value(&item, "guid")?.as_str()?;
                     Some((path.to_owned(), guid.to_owned()))
                 })
                 .collect::<Vec<_>>();
@@ -367,6 +366,8 @@ impl AssetIndex {
                 }
             }
         }
+
+        info!("roots={}", queue.len());
 
         while let Some(item) = queue.pop() {
             visited.insert(item.clone());

@@ -261,6 +261,7 @@ dependencies = [
  "glob",
  "log",
  "ordslice",
+ "parse",
  "rand 0.7.3",
  "rayon",
  "serde",

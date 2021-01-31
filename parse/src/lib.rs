@@ -23,33 +23,72 @@ impl IndentSig {
     fn empty() -> Self {
         Self::new(0, false)
     }
+
+    fn iter_indent(&self) -> Self {
+        if self.array_elem {
+            Self {
+                // TODO
+                indent: self.indent + 2,
+                array_elem: false,
+            }
+        } else {
+            self.clone()
+        }
+    }
 }
 
-/// iterate over same indent/array_elem
+/// 첫 줄이 array면 array iterator입니다.
+/// - a: <- next()
+///   b: <- next()
+/// - c: <- 안 보임
+///
+/// 첫 줄이 head면 object iterator입니다.
+/// a:
+/// - foo: <- next()
+///   bar:
+/// - baz: <- next()
+///   foz:
+/// 다른 예시
+/// a:
+///   foo: <- next()
+///   bar: <- next()
 #[derive(Clone, Debug)]
 pub struct UnityYamlIter<'a> {
     indent: IndentSig,
     lines: Vec<Line<'a>>,
 
+    /// parsing object
+    parse_object: bool,
     cursor: usize,
 }
 
 impl<'a> UnityYamlIter<'a> {
-    fn from_lines<'b>(lines: &'b [Line<'a>]) -> Self {
+    fn from_lines<'b>(lines: &'b [Line<'a>], parse_object: bool) -> Self {
         let indent = if lines.len() > 0 {
-            lines[0].indent.clone()
+            if parse_object {
+                lines[0].indent.iter_indent()
+            } else {
+                lines[0].indent.clone()
+            }
         } else {
             IndentSig::empty()
         };
+        let lines = lines.to_vec();
 
         Self {
-            lines: lines.to_vec(),
+            lines,
             indent,
+            parse_object,
             cursor: 0,
         }
     }
 }
 
+/// scope가 object root일 때, object를 차례로 반환합니다.
+/// 예를 들어,
+/// Foo: <- 첫 번째 줄
+///   bar: <- 첫 번째
+///   baz: <- 두 번째
 impl<'a> Iterator for UnityYamlIter<'a> {
     type Item = UnityYaml<'a>;
 
@@ -59,13 +98,9 @@ impl<'a> Iterator for UnityYamlIter<'a> {
         }
 
         let line = self.lines[self.cursor].clone();
-
-        if line.indent < self.indent {
-            return None;
-        }
+        let start = self.cursor;
 
         self.cursor += 1;
-        let start = self.cursor;
         while self.cursor < self.lines.len() {
             let line = &self.lines[self.cursor];
             if line.indent <= self.indent {
@@ -74,9 +109,22 @@ impl<'a> Iterator for UnityYamlIter<'a> {
             self.cursor += 1;
         }
 
+        let children = if self.parse_object {
+            &self.lines[start + 1..self.cursor]
+        } else {
+            &self.lines[start..self.cursor]
+        };
+
+        let child_parse_object =
+            if self.parse_object && children.len() > 0 && children[0].indent.array_elem {
+                false
+            } else {
+                true
+            };
+
         Some(UnityYaml {
             cur: line,
-            children: UnityYamlIter::from_lines(&self.lines[start..self.cursor]),
+            children: UnityYamlIter::from_lines(children, child_parse_object),
         })
     }
 }
@@ -91,8 +139,12 @@ impl<'a> UnityYaml<'a> {
         self.cur.key
     }
 
-    pub fn value<'b>(&'b self) -> &'b LineValue<'a> {
-        &self.cur.value
+    pub fn as_value<'b>(&'b self) -> Option<&'b LineValue<'a>> {
+        if self.children.lines.len() == 0 {
+            Some(&self.cur.value)
+        } else {
+            None
+        }
     }
 
     pub fn as_str<'b>(&'b self) -> Option<&'a str> {
@@ -107,11 +159,7 @@ impl<'a> UnityYaml<'a> {
     }
 
     pub fn is_object(&self) -> bool {
-        self.children
-            .lines
-            .get(0)
-            .map(|line| !line.indent.array_elem)
-            .unwrap_or(false)
+        self.children.parse_object
     }
 
     pub fn is_array(&self) -> bool {
@@ -135,15 +183,23 @@ pub struct UnityYamlObject<'a> {
 
 impl<'a> UnityYamlObject<'a> {
     pub fn iter<'b>(&'b self) -> UnityYamlIter<'a> {
-        UnityYamlIter::from_lines(&self.lines)
+        UnityYamlIter::from_lines(&self.lines, true)
     }
 }
 
 #[allow(unused)]
-fn debug_print(iter: UnityYamlIter, depth: usize) {
+pub fn debug_print(iter: UnityYamlIter, depth: usize) {
     for item in iter {
-        eprintln!("#{} item={:?}", depth, item.cur);
+        println!("#{} item={:?}", depth, item.cur);
         debug_print(item.children, depth + 1);
+    }
+}
+
+#[allow(unused)]
+pub fn debug_print_item(item: UnityYaml, depth: usize) {
+    println!("#{} item={:?}", depth, item.cur);
+    for child in item.iter() {
+        debug_print_item(child, depth + 1);
     }
 }
 
@@ -172,6 +228,13 @@ pub struct Line<'a> {
     indent: IndentSig,
     key: Option<&'a str>,
     value: LineValue<'a>,
+}
+
+impl<'a> Line<'a> {
+    #[allow(unused)]
+    fn new(indent: IndentSig, key: Option<&'a str>, value: LineValue<'a>) -> Self {
+        Self { indent, key, value }
+    }
 }
 
 fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
@@ -226,7 +289,7 @@ fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
 
 fn parse_yaml_embed_pair(i: &str) -> nom::IResult<&str, (&str, &str)> {
     let (i, (_, key, _, _, value)) = nom::sequence::tuple((
-        take_while(|c| c == ',' || c == ' '),
+        take_while(|c| c == ',' || c == ' ' || c == '\r' || c == '\n'),
         take_while(key_char),
         tag(":"),
         space0,
@@ -393,10 +456,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_yaml_keyvalue_line_newline_test() {
+        let line = "foobarbaz: {x: 1,\n  y: 2}\n";
+        let (_remain, (key, value)) = parse_yaml_keyvalue_line(line).unwrap();
+        assert_eq!(_remain.len(), 0);
+        assert_eq!(key, Some("foobarbaz"));
+        assert_eq!(value, LineValue::Map(vec![("x", "1"), ("y", "2")]));
+    }
+
+    #[test]
     fn parse_yaml_keyvalue_line_test() {
         let input = &[
             "foobarbaz: hello world\n",
             "foobarbaz: {x: 1, y: 2}\n",
+            "foobarbaz: {x: 1,\n  y: 2}\n",
             "foobar - baz: foo - bar\n",
         ];
 
@@ -413,6 +486,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_array() {
+        let input = r#"--- !u!123 &456
+hello:
+  - foo:
+    bar:
+    baz:
+  - foo:
+    bar:
+    bzz:
+"#;
+
+        let (remain, parsed) = parse_yaml_object(&input).unwrap();
+        assert_eq!(remain.len(), 0);
+
+        assert_eq!(parsed.iter().count(), 1);
+
+        let root = parsed.iter().next().unwrap();
+        assert_eq!(root.iter().count(), 2);
+        for item in root.iter() {
+            assert_eq!(item.iter().count(), 3);
+            for terminal in item.iter() {
+                assert_eq!(terminal.iter().count(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_obj() {
+        let input = r#"--- !u!1 &2
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+"#;
+
+        let (remain, parsed) = parse_yaml_object(&input).unwrap();
+        assert_eq!(remain.len(), 0);
+    }
+
+    #[test]
     fn parse_embed_value() {
         let line = "{x: -0}\n";
         let res = parse_yaml_embed_value0(line);
@@ -424,5 +536,64 @@ mod tests {
         let line = "{x: -0, y: -0, z: -0, w: 1}\n";
         let res = parse_yaml_embed_value0(line);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn iter_obj_test() {
+        use LineValue::Str;
+        let cur = Line::new(IndentSig::new(0, false), Some("bar"), Str(""));
+        let lines = vec![
+            Line::new(IndentSig::new(2, false), Some("bar2"), Str("baz")),
+            Line::new(IndentSig::new(2, false), Some("bar3"), Str("baz")),
+        ];
+
+        let item = UnityYaml {
+            cur,
+            children: UnityYamlIter::from_lines(&lines, true),
+        };
+
+        assert_eq!(item.iter().count(), 2);
+        for child in item.iter() {
+            assert_eq!(child.iter().count(), 0);
+        }
+    }
+
+    #[test]
+    fn iter_obj_test2() {
+        use LineValue::Str;
+        let lines = vec![
+            Line::new(IndentSig::new(4, false), Some("bar"), Str("baz")),
+            Line::new(IndentSig::new(4, false), Some("bar2"), Str("baz")),
+            Line::new(IndentSig::new(4, false), Some("bar3"), Str("baz")),
+        ];
+
+        let iter = UnityYamlIter::from_lines(&lines, true);
+        assert_eq!(iter.clone().count(), 3);
+        for item in iter {
+            assert_eq!(item.iter().count(), 0);
+        }
+    }
+
+    #[test]
+    fn iter_arr_test() {
+        use LineValue::Str;
+
+        let lines = vec![
+            Line::new(IndentSig::new(2, false), Some("foo"), Str("")),
+            Line::new(IndentSig::new(2, true), Some("foo"), Str("baz")),
+            Line::new(IndentSig::new(4, false), Some("bar1"), Str("baz")),
+            Line::new(IndentSig::new(4, false), Some("bar2"), Str("baz")),
+            Line::new(IndentSig::new(2, true), Some("foo1"), Str("baz")),
+            Line::new(IndentSig::new(4, false), Some("bar3"), Str("baz")),
+            Line::new(IndentSig::new(4, false), Some("bar4"), Str("baz")),
+        ];
+
+        let mut iter = UnityYamlIter::from_lines(&lines, true);
+        let item = iter.next().unwrap();
+
+        assert_eq!(item.iter().count(), 2);
+        for item in item.iter() {
+            assert_eq!(item.iter().count(), 3);
+        }
     }
 }

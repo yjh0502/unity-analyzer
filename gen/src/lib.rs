@@ -12,11 +12,9 @@ use stopwatch::Stopwatch;
 
 pub mod assetindex;
 pub mod object;
-pub mod objectheader;
 pub mod typegen;
 
-use object::Object;
-use objectheader::ObjectHeader;
+use object::{try_find_value, Object};
 
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
@@ -233,9 +231,9 @@ impl HierarchyIndex {
     }
 }
 
-pub struct AssetFile {
+pub struct AssetFile<'a> {
     pub meta: Option<FileInfo>,
-    pub objects: Vec<Object>,
+    pub objects: Vec<Object<'a>>,
 
     pub text_len: usize,
 
@@ -246,7 +244,7 @@ pub struct AssetFile {
     pub index: HierarchyIndex,
 }
 
-impl AssetFile {
+impl<'a> AssetFile<'a> {
     pub fn from_meta(meta: FileInfo) -> Self {
         Self {
             meta: Some(meta),
@@ -257,23 +255,14 @@ impl AssetFile {
         }
     }
 
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn from_str(body: &'a str) -> Result<Self> {
+        let parsed = parse::parse_str(body)?;
+
         let mut objects = Vec::new();
         let mut file_id_indices = HashMap::new();
 
-        let path = path.as_ref();
-        let buf = YamlBuf::from_path(path)?;
-        for res in buf.iter() {
-            let (_key, body) = res?;
-            let header = match ObjectHeader::from_str(_key) {
-                Ok(header) => header,
-                Err(_e) => {
-                    error!("failed to parse header, \"{}\"", _key);
-                    return Err(_e);
-                }
-            };
-
-            let obj = Object::from_header_body(header, body)?;
+        for parsed_obj in parsed.objects {
+            let obj = Object::from_yaml_object(parsed_obj)?;
 
             file_id_indices.insert(obj.header.file_id, objects.len());
             objects.push(obj);
@@ -284,7 +273,7 @@ impl AssetFile {
         Ok(Self {
             meta: None,
             objects,
-            text_len: buf.data_len(),
+            text_len: body.len(),
             file_id_indices,
             index,
         })
@@ -297,14 +286,14 @@ impl AssetFile {
         }
     }
 
-    pub fn object_by_file_id<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+    pub fn object_by_file_id(&self, file_id: i64) -> Option<&Object> {
         trace!("object_by_file_id id={}", file_id);
         let idx = self.file_id_indices[&file_id];
         let obj = &self.objects[idx];
         Some(obj)
     }
 
-    pub fn gameobject<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+    pub fn gameobject(&self, file_id: i64) -> Option<&Object> {
         let obj = self.object_by_file_id(file_id)?;
         let go_file_id = obj.gameobject()?;
         if go_file_id == 0 {
@@ -314,7 +303,7 @@ impl AssetFile {
         self.object_by_file_id(go_file_id)
     }
 
-    pub fn transform<'a>(&'a self, file_id: i64) -> Option<&'a Object> {
+    pub fn transform(&self, file_id: i64) -> Option<&Object> {
         trace!("transform file_id={}", file_id);
         let go = self.gameobject(file_id)?;
         trace!("go={:?}", go.header.file_id);
@@ -440,25 +429,18 @@ impl AssetFile {
         }
     }
 
-    pub fn prefab_source_guid(&self, file_id: i64) -> Option<&str> {
-        use yaml_rust::Yaml;
+    pub fn prefab_source_guid(&'a self, file_id: i64) -> Option<&'a str> {
         let transform = self.object_by_file_id(file_id)?;
 
         if transform.is_prefab_transform() {
             // find prefab instance
-            let inst_ref = transform
-                .parsed
-                .as_hash()?
-                .get(&Yaml::from_str("m_PrefabInstance"))?;
-            let file_id = object::try_get_file_id(inst_ref)?;
+            let inst_ref = try_find_value(&transform.parsed, "m_PrefabInstance")?;
+            let file_id = object::try_get_file_id(&inst_ref)?;
             let inst = self.object_by_file_id(file_id)?;
 
             // find prefab guid from prefab instance
-            let src_ref = inst
-                .parsed
-                .as_hash()?
-                .get(&Yaml::from_str("m_SourcePrefab"))?;
-            object::try_get_guid(src_ref)
+            let src_ref = try_find_value(&inst.parsed, "m_SourcePrefab")?;
+            object::try_get_guid(&src_ref)
         } else {
             None
         }

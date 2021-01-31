@@ -26,6 +26,7 @@ enum SubCommands {
     Danglings(CommandDanglings),
     Parse(CommandParse),
     ListFiles(CommandListFiles),
+    ListRefs(CommandListRefs),
 }
 
 #[derive(FromArgs, Debug)]
@@ -76,6 +77,13 @@ struct CommandParse {
 struct CommandListFiles {
     #[argh(positional)]
     dir: String,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "list-refs", description = "list-refs")]
+struct CommandListRefs {
+    #[argh(positional)]
+    file: String,
 }
 
 fn cmd_typegen(cmd: CommandTypeGen) -> Result<()> {
@@ -283,6 +291,30 @@ fn cmd_list_files(v: CommandListFiles) -> Result<()> {
     Ok(())
 }
 
+fn cmd_list_refs(v: CommandListRefs) -> Result<()> {
+    use std::collections::HashSet;
+
+    let file = &v.file;
+
+    let content = std::fs::read_to_string(file)?;
+    let parsed = AssetFile::from_str(&content)?;
+
+    let mut set = HashSet::new();
+
+    for obj in parsed.objects {
+        for reference in obj.references {
+            if let Some(guid) = reference.guid {
+                set.insert(guid.to_owned());
+            }
+        }
+    }
+    for key in set {
+        println!("{}", key);
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("gen=info,cli=info"),
@@ -296,5 +328,6 @@ fn main() -> Result<()> {
         SubCommands::Danglings(v) => cmd_danglings(v),
         SubCommands::Parse(v) => cmd_parse(v),
         SubCommands::ListFiles(v) => cmd_list_files(v),
+        SubCommands::ListRefs(v) => cmd_list_refs(v),
     }
 }
