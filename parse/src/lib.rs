@@ -23,10 +23,6 @@ impl IndentSig {
     fn empty() -> Self {
         Self::new(0, false)
     }
-
-    fn is_empty(&self) -> bool {
-        *self == Self::empty()
-    }
 }
 
 /// iterate over same indent/array_elem
