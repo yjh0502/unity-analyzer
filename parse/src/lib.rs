@@ -91,12 +91,12 @@ pub struct UnityYaml<'a> {
     children: UnityYamlIter<'a>,
 }
 impl<'a> UnityYaml<'a> {
-    pub fn key(&self) -> &'a str {
+    pub fn key<'b>(&'b self) -> Option<&'a str> {
         self.cur.key
     }
 
-    pub fn is_value(&self) -> bool {
-        self.children.lines.is_empty()
+    pub fn value<'b>(&'b self) -> &'b LineValue<'a> {
+        &self.cur.value
     }
 
     pub fn as_str<'b>(&'b self) -> Option<&'a str> {
@@ -164,7 +164,7 @@ pub struct ObjectHeader {
     pub stripped: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LineValue<'a> {
     None,
     Str(&'a str),
@@ -174,7 +174,7 @@ pub enum LineValue<'a> {
 #[derive(Debug, Clone)]
 pub struct Line<'a> {
     indent: IndentSig,
-    key: &'a str,
+    key: Option<&'a str>,
     value: LineValue<'a>,
 }
 
@@ -228,11 +228,6 @@ fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
     Ok((i, IndentSig::new(cur_indent.len(), array_elem)))
 }
 
-fn parse_yaml_non_value(i: &str) -> nom::IResult<&str, LineValue> {
-    let (i, _) = newline(i)?;
-    Ok((i, LineValue::None))
-}
-
 fn parse_yaml_embed_pair(i: &str) -> nom::IResult<&str, (&str, &str)> {
     let (i, (_, key, _, _, value)) = nom::sequence::tuple((
         take_while(|c| c == ',' || c == ' '),
@@ -245,6 +240,8 @@ fn parse_yaml_embed_pair(i: &str) -> nom::IResult<&str, (&str, &str)> {
 }
 
 fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
+    // example
+    // {a: 1, b: 2}\n
     let (i, (_, vec, _, _)) = nom::sequence::tuple((
         //
         tag("{"),
@@ -255,43 +252,58 @@ fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
     Ok((i, LineValue::Map(vec)))
 }
 
-fn parse_yaml_embed_value(i: &str) -> nom::IResult<&str, LineValue> {
-    let (i, (_, _, value, _)) =
-        nom::sequence::tuple((tag(":"), space0, parse_yaml_embed_value0, newline))(i)?;
-    Ok((i, value))
+fn parse_yaml_str_value(i: &str) -> nom::IResult<&str, LineValue> {
+    // example
+    // foo bar baz - baz\n
+    let (i, (value, _)) = nom::sequence::tuple((not_line_ending, newline))(i)?;
+    Ok((i, LineValue::Str(value)))
 }
 
-fn parse_yaml_str_value(i: &str) -> nom::IResult<&str, LineValue> {
-    let (i, (_, _, value, _)) =
-        nom::sequence::tuple((tag(":"), space0, not_line_ending, newline))(i)?;
-    Ok((i, LineValue::Str(value)))
+fn parse_yaml_embed_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
+    // example
+    // {a: 1, b: 2}\n
+    let (i, value) = parse_yaml_embed_value0(i)?;
+    Ok((i, (None, value)))
+}
+
+fn parse_yaml_valueonly_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
+    // example
+    // foobarbaz\n
+    let (i, (value, _)) = nom::sequence::tuple((take_while(key_char), newline))(i)?;
+    Ok((i, (Some(value), LineValue::None)))
+}
+
+fn parse_yaml_keyvalue_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
+    // example
+    // foobarbaz: hello world\n
+    // foobarbaz: {x: 1, y: 2}\n
+    let (i, (key, _, _, value)) = nom::sequence::tuple((
+        take_while(key_char),
+        tag(":"),
+        space0,
+        nom::branch::alt((parse_yaml_embed_value0, parse_yaml_str_value)),
+    ))(i)?;
+    Ok((i, (Some(key), value)))
 }
 
 fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
     use nom::error::*;
 
-    let (i, (indent, key, value)) = nom::sequence::tuple((
-        parse_indent_sig,
-        take_while(key_char),
-        nom::branch::alt((
-            parse_yaml_non_value,
-            parse_yaml_embed_value,
-            parse_yaml_str_value,
-        )),
-    ))(i)?;
-
-    let (key, value) = match value {
-        LineValue::None => (&key[0..0], LineValue::Str(key)),
-        value => (key, value),
-    };
-
-    // TODO: perf
-    if indent.is_empty() && key.starts_with("---") {
+    if i.len() > 3 && &i[0..3] == "---" {
         return Err(nom::Err::Error(nom::error::Error::new(
             "looks like an object header",
             ErrorKind::Tag,
         )));
     }
+
+    let (i, (indent, (key, value))) = nom::sequence::tuple((
+        parse_indent_sig,
+        nom::branch::alt((
+            parse_yaml_embed_line,
+            parse_yaml_keyvalue_line,
+            parse_yaml_valueonly_line,
+        )),
+    ))(i)?;
 
     Ok((i, Line { indent, key, value }))
 }
@@ -348,6 +360,53 @@ mod tests {
         let a = IndentSig::new(2, false);
         let b = IndentSig::new(4, false);
         assert!(a < b);
+    }
+
+    #[test]
+    fn parse_line_test() {
+        let input = &[
+            //
+            "      - 0.37482873\n",
+            "  - hello\n",
+            "  - hello: world\n",
+            "  - {x: 1, y: 2}\n",
+        ];
+
+        for line in input {
+            let res = parse_yaml_like(line);
+            assert!(res.is_ok());
+        }
+    }
+
+    #[test]
+    fn parse_array_map() {
+        let line = "  - {x: 1, y: 2}\n";
+        let (_remain, parsed) = parse_yaml_like(line).unwrap();
+        assert_eq!(_remain.len(), 0);
+        assert_eq!(parsed.key, None);
+        assert_eq!(parsed.value, LineValue::Map(vec![("x", "1"), ("y", "2")]));
+    }
+
+    #[test]
+    fn parse_array_kv_map() {
+        let line = "  - key: {x: 1, y: 2}\n";
+        let (_remain, parsed) = parse_yaml_like(line).unwrap();
+        assert_eq!(_remain.len(), 0);
+        assert_eq!(parsed.key, Some("key"));
+        assert_eq!(parsed.value, LineValue::Map(vec![("x", "1"), ("y", "2")]));
+    }
+
+    #[test]
+    fn parse_yaml_keyvalue_line_test() {
+        let input = &[
+            "foobarbaz: hello world\n",
+            "foobarbaz: {x: 1, y: 2}\n",
+            "foobar - baz: foo - bar\n",
+        ];
+
+        for line in input {
+            assert!(parse_yaml_keyvalue_line(line).is_ok());
+        }
     }
 
     #[test]
