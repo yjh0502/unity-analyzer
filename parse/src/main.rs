@@ -8,7 +8,10 @@ fn main() -> Result<()> {
 
     let sw = Stopwatch::start_new();
 
-    let filename = "../files/Art02_Humans.unity";
+    let filename = "files/Art02_Humans.unity";
+    // let filename = "740/Assets/Prefabs/train.prefab";
+    // let filename = "740/Assets/Scenes/Game_Profiles/Main Camera Profile.asset";
+
     let file = std::fs::read_to_string(filename)?;
 
     let parsed = parse_str(&file)?;
@@ -20,7 +23,7 @@ fn main() -> Result<()> {
         filename,
         bytesize::ByteSize(file.len() as u64),
         elapsed,
-        bytesize::ByteSize(file.len() as u64 * 1000 / elapsed as u64)
+        bytesize::ByteSize(file.len() as u64 * 1000 / elapsed.max(1) as u64)
     );
 
     Ok(())

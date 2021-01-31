@@ -30,16 +30,16 @@ impl IndentSig {
 }
 
 /// iterate over same indent/array_elem
-#[derive(Clone)]
-pub struct UnityYamlIndentIter<'a> {
+#[derive(Clone, Debug)]
+pub struct UnityYamlIter<'a> {
     indent: IndentSig,
-    lines: &'a [Line<'a>],
+    lines: Vec<Line<'a>>,
 
     cursor: usize,
 }
 
-impl<'a> UnityYamlIndentIter<'a> {
-    fn from_lines(lines: &'a [Line]) -> Self {
+impl<'a> UnityYamlIter<'a> {
+    fn from_lines<'b>(lines: &'b [Line<'a>]) -> Self {
         let indent = if lines.len() > 0 {
             lines[0].indent.clone()
         } else {
@@ -47,22 +47,22 @@ impl<'a> UnityYamlIndentIter<'a> {
         };
 
         Self {
-            lines,
+            lines: lines.to_vec(),
             indent,
             cursor: 0,
         }
     }
 }
 
-impl<'a> Iterator for UnityYamlIndentIter<'a> {
+impl<'a> Iterator for UnityYamlIter<'a> {
     type Item = UnityYaml<'a>;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next<'b>(&'b mut self) -> Option<Self::Item> {
         if self.cursor == self.lines.len() {
             return None;
         }
 
-        let line = &self.lines[self.cursor];
+        let line = self.lines[self.cursor].clone();
 
         if line.indent < self.indent {
             return None;
@@ -80,16 +80,36 @@ impl<'a> Iterator for UnityYamlIndentIter<'a> {
 
         Some(UnityYaml {
             cur: line,
-            children: UnityYamlIndentIter::from_lines(&self.lines[start..self.cursor]),
+            children: UnityYamlIter::from_lines(&self.lines[start..self.cursor]),
         })
     }
 }
 
+#[derive(Debug)]
 pub struct UnityYaml<'a> {
-    cur: &'a Line<'a>,
-    children: UnityYamlIndentIter<'a>,
+    cur: Line<'a>,
+    children: UnityYamlIter<'a>,
 }
 impl<'a> UnityYaml<'a> {
+    pub fn key(&self) -> &'a str {
+        self.cur.key
+    }
+
+    pub fn is_value(&self) -> bool {
+        self.children.lines.is_empty()
+    }
+
+    pub fn as_str<'b>(&'b self) -> Option<&'a str> {
+        match self.cur.value {
+            LineValue::Str(ref s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_i64(&self) -> Option<i64> {
+        self.as_str()?.parse().ok()
+    }
+
     pub fn is_object(&self) -> bool {
         self.children
             .lines
@@ -106,69 +126,97 @@ impl<'a> UnityYaml<'a> {
             .unwrap_or(false)
     }
 
-    pub fn iter(&self) -> UnityYamlIndentIter {
+    pub fn iter<'b>(&'b self) -> UnityYamlIter<'a> {
         self.children.clone()
     }
 }
 
 #[derive(Debug)]
 pub struct UnityYamlObject<'a> {
-    #[allow(unused)]
-    header: ObjectHeader<'a>,
-    #[allow(unused)]
+    pub header: ObjectHeader,
     lines: Vec<Line<'a>>,
 }
 
 impl<'a> UnityYamlObject<'a> {
-    pub fn iter(&'a self) -> UnityYamlIndentIter<'a> {
-        UnityYamlIndentIter::from_lines(&self.lines)
+    pub fn iter<'b>(&'b self) -> UnityYamlIter<'a> {
+        UnityYamlIter::from_lines(&self.lines)
     }
 }
 
 #[allow(unused)]
-fn debug_print(iter: UnityYamlIndentIter, depth: usize) {
+fn debug_print(iter: UnityYamlIter, depth: usize) {
     for item in iter {
         eprintln!("#{} item={:?}", depth, item.cur);
         debug_print(item.children, depth + 1);
     }
 }
 
-#[derive(Debug)]
-struct ObjectHeader<'a> {
-    tag1: &'a str,
-    tag2: &'a str,
-    tag3: &'a str,
+/// yaml 파일에 대한 정보. prefab/scene 등이 이에 해당합니다.
+/// 내부에서 object tree 구조를 가지고 있습니다.
+/// `--- !u!1001 &33075763` 에서, object_id=101, file_id=33075763
+#[derive(Debug, Clone)]
+pub struct ObjectHeader {
+    /// file-local object id. 따로 쓰는 것 같지는 않지만 일단 파싱합니다
+    pub object_id: u64,
+    /// fileID
+    pub file_id: i64,
+    /// Tag. stripped?
+    pub stripped: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub enum LineValue<'a> {
+    None,
+    Str(&'a str),
+    Map(Vec<(&'a str, &'a str)>),
+}
+
+#[derive(Debug, Clone)]
 pub struct Line<'a> {
     indent: IndentSig,
     key: &'a str,
-    value: &'a str,
-}
-
-impl<'a> Line<'a> {
-    pub fn is_embedded_object(&self) -> bool {
-        self.value.len() > 0 && self.value.as_bytes()[0] == b'{'
-    }
+    value: LineValue<'a>,
 }
 
 fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
-    let (i, (_, _, tag1, _, tag2, tag3, _)) = nom::sequence::tuple((
+    let (i, (_, _, tag1, _, tag2, _, tag3, _)) = nom::sequence::tuple((
         tag("--- "),
         tag("!u!"),
         digit1,
         tag(" &"),
         digit1,
+        space0,
         alphanumeric0,
         newline,
     ))(i)?;
 
-    Ok((i, ObjectHeader { tag1, tag2, tag3 }))
+    let object_id = tag1.parse().unwrap();
+    let file_id = tag2.parse().unwrap();
+
+    let stripped = if tag3 == "stripped" {
+        true
+    } else if tag3.is_empty() {
+        false
+    } else {
+        todo!()
+    };
+
+    Ok((
+        i,
+        ObjectHeader {
+            object_id,
+            file_id,
+            stripped,
+        },
+    ))
 }
 
 fn key_char(chr: char) -> bool {
-    chr != ':'
+    chr != ':' && chr != '\r' && chr != '\n'
+}
+
+fn embed_value_char(chr: char) -> bool {
+    chr != ',' && chr != '}' && chr != ' '
 }
 
 fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
@@ -180,17 +228,62 @@ fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
     Ok((i, IndentSig::new(cur_indent.len(), array_elem)))
 }
 
-fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
-    use nom::error::*;
+fn parse_yaml_non_value(i: &str) -> nom::IResult<&str, LineValue> {
+    let (i, _) = newline(i)?;
+    Ok((i, LineValue::None))
+}
 
-    let (i, (indent, key, _, _, value, _)) = nom::sequence::tuple((
-        parse_indent_sig,
+fn parse_yaml_embed_pair(i: &str) -> nom::IResult<&str, (&str, &str)> {
+    let (i, (_, key, _, _, value)) = nom::sequence::tuple((
+        take_while(|c| c == ',' || c == ' '),
         take_while(key_char),
         tag(":"),
         space0,
-        not_line_ending,
+        take_while(embed_value_char),
+    ))(i)?;
+    Ok((i, (key, value)))
+}
+
+fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
+    let (i, (_, vec, _, _)) = nom::sequence::tuple((
+        //
+        tag("{"),
+        nom::multi::many1(parse_yaml_embed_pair),
+        tag("}"),
         newline,
     ))(i)?;
+    Ok((i, LineValue::Map(vec)))
+}
+
+fn parse_yaml_embed_value(i: &str) -> nom::IResult<&str, LineValue> {
+    let (i, (_, _, value, _)) =
+        nom::sequence::tuple((tag(":"), space0, parse_yaml_embed_value0, newline))(i)?;
+    Ok((i, value))
+}
+
+fn parse_yaml_str_value(i: &str) -> nom::IResult<&str, LineValue> {
+    let (i, (_, _, value, _)) =
+        nom::sequence::tuple((tag(":"), space0, not_line_ending, newline))(i)?;
+    Ok((i, LineValue::Str(value)))
+}
+
+fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
+    use nom::error::*;
+
+    let (i, (indent, key, value)) = nom::sequence::tuple((
+        parse_indent_sig,
+        take_while(key_char),
+        nom::branch::alt((
+            parse_yaml_non_value,
+            parse_yaml_embed_value,
+            parse_yaml_str_value,
+        )),
+    ))(i)?;
+
+    let (key, value) = match value {
+        LineValue::None => (&key[0..0], LineValue::Str(key)),
+        value => (key, value),
+    };
 
     // TODO: perf
     if indent.is_empty() && key.starts_with("---") {
@@ -232,7 +325,10 @@ fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile> {
 pub fn parse_str<'a>(input: &'a str) -> Result<UnityYamlFile<'a>> {
     match parse_unity_yaml(input) {
         Ok((_remain, parsed)) => Ok(parsed),
-        Err(_e) => bail!("parse error"),
+        Err(_e) => {
+            log::error!("{:?}", _e);
+            bail!("parse error")
+        }
     }
 }
 
@@ -252,5 +348,26 @@ mod tests {
         let a = IndentSig::new(2, false);
         let b = IndentSig::new(4, false);
         assert!(a < b);
+    }
+
+    #[test]
+    fn parse_number_line() {
+        let line = "      - 0.37482873\n";
+        let res = parse_yaml_like(line);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn parse_embed_value() {
+        let line = "{x: -0}\n";
+        let res = parse_yaml_embed_value0(line);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn parse_embed_value_multi() {
+        let line = "{x: -0, y: -0, z: -0, w: 1}\n";
+        let res = parse_yaml_embed_value0(line);
+        assert!(res.is_ok());
     }
 }
