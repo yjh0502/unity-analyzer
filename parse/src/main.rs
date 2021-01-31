@@ -229,23 +229,18 @@ fn key_char(chr: char) -> bool {
     chr != ':'
 }
 
-fn parse_yaml_like_elem(i: &str) -> nom::IResult<&str, UnityYamlLine> {
-    let (i, (cur_indent, _, value, _)) =
-        nom::sequence::tuple((space0, tag("- "), not_line_ending, newline))(i)?;
-
-    Ok((
-        i,
-        UnityYamlLine::Line(Line {
-            indent: IndentSig::new(cur_indent.len(), true),
-            key: "",
-            value,
-        }),
-    ))
+fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
+    let (i, cur_indent) = space0(i)?;
+    let (i, array_elem) = match tag::<_, _, nom::error::Error<_>>("- ")(i) {
+        Ok((i, _)) => (i, true),
+        Err(_) => (i, false),
+    };
+    Ok((i, IndentSig::new(cur_indent.len(), array_elem)))
 }
 
 fn parse_yaml_like(i: &str) -> nom::IResult<&str, UnityYamlLine> {
-    let (i, (cur_indent, key, _, _, value, _)) = nom::sequence::tuple((
-        space0,
+    let (i, (indent, key, _, _, value, _)) = nom::sequence::tuple((
+        parse_indent_sig,
         take_while(key_char),
         tag(":"),
         space0,
@@ -253,14 +248,7 @@ fn parse_yaml_like(i: &str) -> nom::IResult<&str, UnityYamlLine> {
         newline,
     ))(i)?;
 
-    Ok((
-        i,
-        UnityYamlLine::Line(Line {
-            indent: IndentSig::new(cur_indent.len(), false),
-            key,
-            value,
-        }),
-    ))
+    Ok((i, UnityYamlLine::Line(Line { indent, key, value })))
 }
 
 fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
@@ -276,11 +264,7 @@ fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
 fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile> {
     let (i, _) = parse_file_header(i)?;
 
-    let (i, lines) = nom::multi::many1(nom::branch::alt((
-        parse_chunk_header,
-        parse_yaml_like,
-        parse_yaml_like_elem,
-    )))(i)?;
+    let (i, lines) = nom::multi::many1(nom::branch::alt((parse_chunk_header, parse_yaml_like)))(i)?;
 
     Ok((i, UnityYamlFile { lines }))
 }
