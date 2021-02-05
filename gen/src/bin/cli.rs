@@ -254,15 +254,22 @@ fn cmd_danglings(v: CommandDanglings) -> Result<()> {
 }
 
 fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
-    use std::collections::HashSet;
+    use std::collections::hash_map::Entry::*;
 
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
-    let mut bundles = HashSet::new();
+    let mut bundles = HashMap::new();
     for asset in idx.assets.values() {
         if let Some(ref meta) = asset.meta {
             if let Some(name) = meta.asset_bundle_name() {
-                bundles.insert(name.to_owned());
+                match bundles.entry(name) {
+                    Occupied(mut v) => {
+                        *v.get_mut() += 1;
+                    }
+                    Vacant(v) => {
+                        v.insert(1);
+                    }
+                }
             }
         }
     }
