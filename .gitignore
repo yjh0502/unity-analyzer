@@ -7,3 +7,4 @@ metalist
 *.svg
 *.log
 perf.data*
+*.sw[a-z]

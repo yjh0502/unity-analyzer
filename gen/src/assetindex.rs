@@ -322,11 +322,31 @@ impl AssetIndex {
         }
     }
 
+    pub fn deps(&self, roots: &[String]) -> HashSet<String> {
+        let mut visited = HashSet::new();
+
+        let mut queue = roots.iter().map(|s| s.clone()).collect::<Vec<_>>();
+
+        while let Some(item) = queue.pop() {
+            visited.insert(item.clone());
+
+            for forward_ref in self.forward_refs(&item) {
+                let dst = &forward_ref.dst_guid;
+                if visited.contains(dst) {
+                    continue;
+                }
+
+                queue.push(dst.clone());
+            }
+        }
+
+        visited
+    }
+
     pub fn danglings(&self, includes: Vec<String>) -> Result<Vec<PathBuf>> {
         let resources_dir = Path::join(&self.root, "Assets/Resources");
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
 
-        let mut visited = HashSet::new();
         let mut queue = self
             .scene_guids()?
             .into_iter()
@@ -369,18 +389,7 @@ impl AssetIndex {
 
         info!("roots={}", queue.len());
 
-        while let Some(item) = queue.pop() {
-            visited.insert(item.clone());
-
-            for forward_ref in self.forward_refs(&item) {
-                let dst = &forward_ref.dst_guid;
-                if visited.contains(dst) {
-                    continue;
-                }
-
-                queue.push(dst.clone());
-            }
-        }
+        let visited = self.deps(&queue);
 
         info!("total={}, visited={}", self.assets.len(), visited.len());
 
