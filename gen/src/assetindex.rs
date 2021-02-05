@@ -143,7 +143,7 @@ pub struct AssetIndex {
     root: PathBuf,
 
     /// path -> AssetFile
-    assets: HashMap<PathBuf, AssetFile<'static>>,
+    pub assets: HashMap<PathBuf, AssetFile<'static>>,
 
     /// guid -> Path
     asset_guids: HashMap<String, PathBuf>,

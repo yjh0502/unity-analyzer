@@ -24,6 +24,7 @@ struct TopLevel {
 enum SubCommands {
     TypeGen(CommandTypeGen),
     Danglings(CommandDanglings),
+    AssetBundle(CommandAssetBundle),
     Parse(CommandParse),
     ListFiles(CommandListFiles),
     ListRefs(CommandListRefs),
@@ -58,6 +59,13 @@ struct CommandDanglings {
     #[argh(option, short = 'o', description = "output filename")]
     output: String,
 
+    #[argh(positional)]
+    dir: PathBuf,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "assetbundle", description = "assetbundle analysis")]
+struct CommandAssetBundle {
     #[argh(positional)]
     dir: PathBuf,
 }
@@ -245,6 +253,25 @@ fn cmd_danglings(v: CommandDanglings) -> Result<()> {
     Ok(())
 }
 
+fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
+    use std::collections::HashSet;
+
+    let idx = assetindex::AssetIndex::from_path(&v.dir)?;
+
+    let mut bundles = HashSet::new();
+    for asset in idx.assets.values() {
+        if let Some(ref meta) = asset.meta {
+            if let Some(name) = meta.asset_bundle_name() {
+                bundles.insert(name.to_owned());
+            }
+        }
+    }
+
+    eprintln!("{:?}", bundles);
+
+    Ok(())
+}
+
 fn cmd_parse(v: CommandParse) -> Result<()> {
     let sw = Stopwatch::start_new();
 
@@ -326,6 +353,7 @@ fn main() -> Result<()> {
     match args.nested {
         SubCommands::TypeGen(v) => cmd_typegen(v),
         SubCommands::Danglings(v) => cmd_danglings(v),
+        SubCommands::AssetBundle(v) => cmd_assetbundle(v),
         SubCommands::Parse(v) => cmd_parse(v),
         SubCommands::ListFiles(v) => cmd_list_files(v),
         SubCommands::ListRefs(v) => cmd_list_refs(v),
