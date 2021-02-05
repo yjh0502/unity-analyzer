@@ -155,7 +155,8 @@ impl InitializedState {
         // follow prefab?
         } else if self.child_count(selected).unwrap() > 0 {
             let guid = cur_file.guid().unwrap();
-            self.nav_states.push(NavState::new(guid, Some(selected)));
+            let state = NavState::new(guid.to_owned(), Some(selected));
+            self.nav_states.push(state);
         }
     }
 
