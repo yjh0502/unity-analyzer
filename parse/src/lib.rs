@@ -235,9 +235,14 @@ impl<'a> Line<'a> {
     }
 }
 
+fn newline_n_or_rn(i: &str) -> nom::IResult<&str, ()> {
+    let (i, _) = nom::branch::alt((tag("\n"), tag("\r\n")))(i)?;
+    Ok((i, ()))
+}
+
 fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
     let (i, (_, _, _, tag1, _, tag2, _, tag3)) = nom::sequence::tuple((
-        newline,
+        newline_n_or_rn,
         tag("--- "),
         tag("!u!"),
         digit1,
@@ -277,7 +282,7 @@ fn embed_value_char(chr: char) -> bool {
 }
 
 fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
-    let (i, _) = newline(i)?;
+    let (i, _) = newline_n_or_rn(i)?;
     let (i, cur_indent) = space0(i)?;
     let (i, array_elem) = match tag::<_, _, nom::error::Error<_>>("- ")(i) {
         Ok((i, _)) => (i, true),
@@ -375,7 +380,7 @@ fn parse_yaml_object(i: &str) -> nom::IResult<&str, UnityYamlObject> {
 fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
     let (i, _) = nom::sequence::tuple((
         tag("%YAML 1.1"),
-        newline,
+        newline_n_or_rn,
         tag("%TAG !u! tag:unity3d.com,2011:"),
     ))(i)?;
     Ok((i, ()))
@@ -385,7 +390,7 @@ fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile> {
     let (i, (_header, objects, _)) = all_consuming(nom::sequence::tuple((
         parse_file_header,
         nom::multi::many1(parse_yaml_object),
-        opt(newline),
+        opt(newline_n_or_rn),
     )))(i)?;
 
     Ok((i, UnityYamlFile { objects }))
