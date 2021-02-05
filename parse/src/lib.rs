@@ -1,6 +1,8 @@
 use anyhow::bail;
+use nom::branch::*;
 use nom::bytes::complete::*;
 use nom::character::complete::*;
+use nom::combinator::*;
 use std::iter::Iterator;
 
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
@@ -234,7 +236,8 @@ impl<'a> Line<'a> {
 }
 
 fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
-    let (i, (_, _, tag1, _, tag2, _, tag3, _)) = nom::sequence::tuple((
+    let (i, (_, _, _, tag1, _, tag2, _, tag3)) = nom::sequence::tuple((
+        newline,
         tag("--- "),
         tag("!u!"),
         digit1,
@@ -242,7 +245,6 @@ fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
         digit1,
         space0,
         alphanumeric0,
-        newline,
     ))(i)?;
 
     let object_id = tag1.parse().unwrap();
@@ -275,6 +277,7 @@ fn embed_value_char(chr: char) -> bool {
 }
 
 fn parse_indent_sig(i: &str) -> nom::IResult<&str, IndentSig> {
+    let (i, _) = newline(i)?;
     let (i, cur_indent) = space0(i)?;
     let (i, array_elem) = match tag::<_, _, nom::error::Error<_>>("- ")(i) {
         Ok((i, _)) => (i, true),
@@ -297,12 +300,11 @@ fn parse_yaml_embed_pair(i: &str) -> nom::IResult<&str, (&str, &str)> {
 fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
     // example
     // {a: 1, b: 2}\n
-    let (i, (_, vec, _, _)) = nom::sequence::tuple((
+    let (i, (_, vec, _)) = nom::sequence::tuple((
         //
         tag("{"),
         nom::multi::many1(parse_yaml_embed_pair),
         tag("}"),
-        newline,
     ))(i)?;
     Ok((i, LineValue::Map(vec)))
 }
@@ -310,7 +312,7 @@ fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
 fn parse_yaml_str_value(i: &str) -> nom::IResult<&str, LineValue> {
     // example
     // foo bar baz - baz\n
-    let (i, (value, _)) = nom::sequence::tuple((not_line_ending, newline))(i)?;
+    let (i, value) = not_line_ending(i)?;
     Ok((i, LineValue::Str(value)))
 }
 
@@ -324,7 +326,7 @@ fn parse_yaml_embed_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue
 fn parse_yaml_valueonly_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
     // example
     // foobarbaz\n
-    let (i, (value, _)) = nom::sequence::tuple((take_while(key_char), newline))(i)?;
+    let (i, value) = take_while(key_char)(i)?;
     Ok((i, (Some(value), LineValue::None)))
 }
 
@@ -336,7 +338,7 @@ fn parse_yaml_keyvalue_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineVa
         take_while(key_char),
         tag(":"),
         space0,
-        nom::branch::alt((parse_yaml_embed_value0, parse_yaml_str_value)),
+        alt((parse_yaml_embed_value0, parse_yaml_str_value)),
     ))(i)?;
     Ok((i, (Some(key), value)))
 }
@@ -353,7 +355,7 @@ fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
 
     let (i, (indent, (key, value))) = nom::sequence::tuple((
         parse_indent_sig,
-        nom::branch::alt((
+        alt((
             parse_yaml_embed_line,
             parse_yaml_keyvalue_line,
             parse_yaml_valueonly_line,
@@ -375,15 +377,15 @@ fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
         tag("%YAML 1.1"),
         newline,
         tag("%TAG !u! tag:unity3d.com,2011:"),
-        newline,
     ))(i)?;
     Ok((i, ()))
 }
 
 fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile> {
-    let (i, (_header, objects)) = nom::combinator::all_consuming(nom::sequence::tuple((
+    let (i, (_header, objects, _)) = all_consuming(nom::sequence::tuple((
         parse_file_header,
         nom::multi::many1(parse_yaml_object),
+        opt(newline),
     )))(i)?;
 
     Ok((i, UnityYamlFile { objects }))
@@ -421,10 +423,10 @@ mod tests {
     fn parse_line_test() {
         let input = &[
             //
-            "      - 0.37482873\n",
-            "  - hello\n",
-            "  - hello: world\n",
-            "  - {x: 1, y: 2}\n",
+            "\n      - 0.37482873",
+            "\n  - hello",
+            "\n  - hello: world",
+            "\n  - {x: 1, y: 2}",
         ];
 
         for line in input {
@@ -435,7 +437,7 @@ mod tests {
 
     #[test]
     fn parse_array_map() {
-        let line = "  - {x: 1, y: 2}\n";
+        let line = "\n  - {x: 1, y: 2}";
         let (_remain, parsed) = parse_yaml_like(line).unwrap();
         assert_eq!(_remain.len(), 0);
         assert_eq!(parsed.key, None);
@@ -444,7 +446,7 @@ mod tests {
 
     #[test]
     fn parse_array_kv_map() {
-        let line = "  - key: {x: 1, y: 2}\n";
+        let line = "\n  - key: {x: 1, y: 2}";
         let (_remain, parsed) = parse_yaml_like(line).unwrap();
         assert_eq!(_remain.len(), 0);
         assert_eq!(parsed.key, Some("key"));
@@ -453,7 +455,7 @@ mod tests {
 
     #[test]
     fn parse_yaml_keyvalue_line_newline_test() {
-        let line = "foobarbaz: {x: 1,\n  y: 2}\n";
+        let line = "foobarbaz: {x: 1,\n  y: 2}";
         let (_remain, (key, value)) = parse_yaml_keyvalue_line(line).unwrap();
         assert_eq!(_remain.len(), 0);
         assert_eq!(key, Some("foobarbaz"));
@@ -476,22 +478,22 @@ mod tests {
 
     #[test]
     fn parse_number_line() {
-        let line = "      - 0.37482873\n";
+        let line = "\n      - 0.37482873";
         let res = parse_yaml_like(line);
         assert!(res.is_ok());
     }
 
     #[test]
     fn parse_array() {
-        let input = r#"--- !u!123 &456
+        let input = r#"
+--- !u!123 &456
 hello:
   - foo:
     bar:
     baz:
   - foo:
     bar:
-    bzz:
-"#;
+    bzz:"#;
 
         let (remain, parsed) = parse_yaml_object(&input).unwrap();
         assert_eq!(remain.len(), 0);
@@ -510,7 +512,8 @@ hello:
 
     #[test]
     fn parse_obj() {
-        let input = r#"--- !u!1 &2
+        let input = r#"
+--- !u!1 &2
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -591,5 +594,88 @@ GameObject:
         for item in item.iter() {
             assert_eq!(item.iter().count(), 3);
         }
+    }
+
+    #[test]
+    fn file_test() {
+        let content = r#"%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &113650
+GameObject:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  serializedVersion: 4
+  m_Component:
+  - 4: {fileID: 402652}
+  - 20: {fileID: 2009090}
+  m_Layer: 0
+  m_Name: DeviceCameraRenderer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &402652
+Transform:
+  m_ObjectHideFlags: 1
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  m_GameObject: {fileID: 113650}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: .252090454}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 0
+--- !u!20 &2009090
+Camera:
+  m_ObjectHideFlags: 1
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 100100000}
+  m_GameObject: {fileID: 113650}
+  m_Enabled: 1
+  serializedVersion: 2
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0, g: 0, b: 0, a: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: .300000012
+  far clip plane: 1000
+  field of view: 60
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 100
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 32
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_HDR: 0
+  m_OcclusionCulling: 0
+  m_StereoConvergence: 10
+  m_StereoSeparation: .0219999999
+--- !u!1001 &100100000
+Prefab:
+  m_ObjectHideFlags: 1
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications: []
+    m_RemovedComponents: []
+  m_ParentPrefab: {fileID: 0}
+  m_RootGameObject: {fileID: 113650}
+  m_IsPrefabParent: 1"#;
+
+        let out = parse_unity_yaml(content);
+        if let Err(ref e) = out {
+            eprintln!("out={:?}", e);
+        }
+        assert!(out.is_ok());
     }
 }
