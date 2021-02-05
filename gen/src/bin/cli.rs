@@ -258,23 +258,78 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
 
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
-    let mut bundles = HashMap::new();
+    let mut bundles = HashMap::<&str, Vec<String>>::new();
     for asset in idx.assets.values() {
-        if let Some(ref meta) = asset.meta {
+        if let (Some(ref meta), Some(ref guid)) = (&asset.meta, asset.guid()) {
             if let Some(name) = meta.asset_bundle_name() {
                 match bundles.entry(name) {
                     Occupied(mut v) => {
-                        *v.get_mut() += 1;
+                        v.get_mut().push(guid.to_string());
                     }
                     Vacant(v) => {
-                        v.insert(1);
+                        v.insert(vec![guid.to_string()]);
                     }
                 }
             }
         }
     }
 
-    eprintln!("{:?}", bundles);
+    if bundles.is_empty() {
+        return Ok(());
+    }
+
+    // eprintln!("{:?}", bundles);
+
+    let mut bundle_deps_list = Vec::new();
+    for (bundle_name, bundle_roots) in bundles.into_iter() {
+        let (asset_deps, _bundle_deps) = idx.assetbundle_deps(&bundle_name, &bundle_roots);
+
+        info!("bundle={}, deps={:?}", bundle_name, _bundle_deps);
+        bundle_deps_list.push((
+            bundle_name,
+            asset_deps,
+            bundle_roots,
+            _bundle_deps.into_iter().collect::<Vec<_>>(),
+        ));
+    }
+
+    for i in 0..(bundle_deps_list.len() - 1) {
+        for j in (i + 1)..bundle_deps_list.len() {
+            let set_i = &bundle_deps_list[i].1;
+            let set_j = &bundle_deps_list[j].1;
+
+            for guid in set_i.intersection(&set_j) {
+                let key = if let Some(path) = idx.try_asset_path_by_guid(guid) {
+                    if let Some(str_path) = path.to_str() {
+                        if str_path.ends_with(".cs") {
+                            continue;
+                        }
+                        format!("path={:?}", str_path)
+                    } else {
+                        continue;
+                    }
+                } else {
+                    format!("guid={}", guid)
+                };
+
+                let p1 = idx
+                    .decode_path(&bundle_deps_list[i].2, guid)
+                    .iter()
+                    .map(|guid| idx.try_asset_path_by_guid(guid))
+                    .collect::<Option<Vec<_>>>();
+                let p2 = idx
+                    .decode_path(&bundle_deps_list[j].2, guid)
+                    .iter()
+                    .map(|guid| idx.try_asset_path_by_guid(guid))
+                    .collect::<Option<Vec<_>>>();
+
+                warn!(
+                    "a={}, b={}, asset={},\np1={:?}\np2={:?}",
+                    bundle_deps_list[i].0, bundle_deps_list[j].0, key, p1, p2,
+                );
+            }
+        }
+    }
 
     Ok(())
 }

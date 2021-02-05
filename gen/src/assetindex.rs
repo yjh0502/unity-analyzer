@@ -322,6 +322,45 @@ impl AssetIndex {
         }
     }
 
+    pub fn assetbundle_deps(
+        &self,
+        assetbundle_name: &str,
+        assetbundle_roots: &[String],
+    ) -> (HashSet<String>, HashSet<String>) {
+        let mut visited = HashSet::new();
+        let mut visited_bundles = HashSet::new();
+
+        let mut queue = assetbundle_roots
+            .iter()
+            .map(|s| s.clone())
+            .collect::<Vec<_>>();
+
+        while let Some(item) = queue.pop() {
+            let asset = match self.asset_by_guid(&item) {
+                Some(asset) => asset,
+                None => continue,
+            };
+            if let Some(bundle_name) = asset.asset_bundle_name() {
+                if assetbundle_name != bundle_name {
+                    visited_bundles.insert(bundle_name.to_string());
+                    continue;
+                }
+            }
+
+            for forward_ref in self.forward_refs(&item) {
+                let dst = &forward_ref.dst_guid;
+                if visited.contains(dst) {
+                    continue;
+                }
+
+                queue.push(dst.clone());
+            }
+            visited.insert(item);
+        }
+
+        (visited, visited_bundles)
+    }
+
     pub fn deps(&self, roots: &[String]) -> HashSet<String> {
         let mut visited = HashSet::new();
 
@@ -343,6 +382,50 @@ impl AssetIndex {
         visited
     }
 
+    pub fn decode_path(&self, roots: &[String], target: &str) -> Vec<String> {
+        let mut visited = HashSet::new();
+        let mut parents = HashMap::new();
+
+        let mut queue = roots.iter().map(|s| s.clone()).collect::<Vec<_>>();
+        let mut found = false;
+
+        while let Some(item) = queue.pop() {
+            if item == target {
+                found = true;
+                break;
+            }
+
+            visited.insert(item.clone());
+
+            for forward_ref in self.forward_refs(&item) {
+                let dst = &forward_ref.dst_guid;
+                if visited.contains(dst) {
+                    continue;
+                }
+
+                parents.insert(dst.clone(), item.clone());
+                queue.push(dst.clone());
+            }
+        }
+        if !found {
+            return vec![];
+        }
+
+        let mut decoded = vec![target.to_owned()];
+        let mut cur = target;
+        loop {
+            if let Some(parent) = parents.get(cur) {
+                cur = parent;
+                decoded.push(cur.to_owned());
+            } else {
+                break;
+            }
+        }
+        decoded.reverse();
+
+        decoded
+    }
+
     pub fn danglings(&self, includes: Vec<String>) -> Result<Vec<PathBuf>> {
         let resources_dir = Path::join(&self.root, "Assets/Resources");
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
@@ -362,7 +445,7 @@ impl AssetIndex {
             // handle resources (run-time loadable assets)
             if path.starts_with(&resources_dir) || path.starts_with(&streaming_assets_dir) {
                 if let Some(guid) = asset.guid() {
-                    queue.push(guid);
+                    queue.push(guid.to_owned());
                 }
                 continue;
             }
@@ -371,7 +454,7 @@ impl AssetIndex {
                 for pat in &patterns {
                     if pat.matches_path(postfix) {
                         if let Some(guid) = asset.guid() {
-                            queue.push(guid);
+                            queue.push(guid.to_owned());
                         }
                     }
                 }
@@ -381,7 +464,7 @@ impl AssetIndex {
                 // mark all asset bundles dirty
                 if meta.asset_bundle_name().is_some() {
                     if let Some(guid) = asset.guid() {
-                        queue.push(guid);
+                        queue.push(guid.to_owned());
                     }
                 }
             }

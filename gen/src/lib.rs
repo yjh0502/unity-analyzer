@@ -268,11 +268,16 @@ impl<'a> AssetFile<'a> {
         })
     }
 
-    pub fn guid(&self) -> Option<String> {
+    pub fn guid(&self) -> Option<&str> {
         match &self.meta {
-            Some(meta) => Some(meta.guid.clone()),
+            Some(meta) => Some(&meta.guid),
             None => None,
         }
+    }
+
+    pub fn asset_bundle_name(&self) -> Option<&str> {
+        let meta = self.meta.as_ref()?;
+        meta.asset_bundle_name()
     }
 
     pub fn object_by_file_id(&self, file_id: i64) -> Option<&Object> {
