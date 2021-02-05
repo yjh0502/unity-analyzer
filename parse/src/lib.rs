@@ -241,19 +241,21 @@ fn newline_n_or_rn(i: &str) -> nom::IResult<&str, ()> {
 }
 
 fn parse_object_header(i: &str) -> nom::IResult<&str, ObjectHeader> {
-    let (i, (_, _, _, tag1, _, tag2, _, tag3)) = nom::sequence::tuple((
+    let (i, (_, _, _, tag1, _, neg, tag2, _, tag3)) = nom::sequence::tuple((
         newline_n_or_rn,
         tag("--- "),
         tag("!u!"),
         digit1,
         tag(" &"),
+        opt(tag("-")),
         digit1,
         space0,
         alphanumeric0,
     ))(i)?;
 
     let object_id = tag1.parse().unwrap();
-    let file_id = tag2.parse().unwrap();
+    let file_id: i64 = tag2.parse().unwrap();
+    let file_id = if neg.is_some() { -file_id } else { file_id };
 
     let stripped = if tag3 == "stripped" {
         true
