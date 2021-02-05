@@ -218,17 +218,6 @@ impl HierarchyIndex {
 
         Self { relations, roots }
     }
-
-    #[allow(unused)]
-    fn children(&self, parent_file_id: i64) -> &[(i64, i64)] {
-        use ordslice::Ext;
-
-        let range = self
-            .relations
-            .equal_range_by(|(src, _dst)| parent_file_id.cmp(&src));
-
-        &self.relations[range]
-    }
 }
 
 pub struct AssetFile<'a> {

@@ -13,6 +13,30 @@ pub struct Object<'a> {
     pub parsed: UnityYaml<'a>,
 }
 
+pub(crate) fn try_find_value_str<'a, 'b, 'c>(
+    value: &'b UnityYaml<'a>,
+    key: &'c str,
+) -> Option<&'a str> {
+    if let Some(parse::LineValue::Map(ref kv)) = value.as_value() {
+        for (k, v) in kv {
+            if *k == key {
+                return Some(*v);
+            }
+        }
+    }
+
+    if !value.is_object() {
+        return None;
+    }
+
+    for item in value.iter() {
+        if item.key() == Some(key) {
+            return item.as_str();
+        }
+    }
+    None
+}
+
 pub(crate) fn try_find_value<'a, 'b, 'c>(
     value: &'b UnityYaml<'a>,
     key: &'c str,
@@ -30,13 +54,12 @@ pub(crate) fn try_find_value<'a, 'b, 'c>(
 }
 
 pub(crate) fn try_get_file_id<'a>(value: &'a UnityYaml<'a>) -> Option<i64> {
-    let v = try_find_value(value, "fileID")?;
-    v.as_i64()
+    let v = try_find_value_str(value, "fileID")?;
+    v.parse().ok()
 }
 
 pub(crate) fn try_get_guid<'a, 'b>(value: &'b UnityYaml<'a>) -> Option<&'a str> {
-    let v = try_find_value(value, "guid")?;
-    v.as_str()
+    try_find_value_str(value, "guid")
 }
 
 impl<'a> Object<'a> {
@@ -115,8 +138,7 @@ impl<'a> Object<'a> {
     }
 
     pub fn get_str(&self, key: &str) -> Option<&str> {
-        let obj = try_find_value(&self.parsed, key)?;
-        obj.as_str()
+        try_find_value_str(&self.parsed, key)
     }
 
     pub fn is_prefab_transform(&self) -> bool {

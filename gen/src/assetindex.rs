@@ -308,8 +308,8 @@ impl AssetIndex {
             let v = seq
                 .iter()
                 .filter_map(|item| {
-                    let path = try_find_value(&item, "path")?.as_str()?;
-                    let guid = try_find_value(&item, "guid")?.as_str()?;
+                    let path = object::try_find_value_str(&item, "path")?;
+                    let guid = object::try_find_value_str(&item, "guid")?;
                     Some((path.to_owned(), guid.to_owned()))
                 })
                 .collect::<Vec<_>>();

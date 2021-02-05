@@ -140,11 +140,7 @@ impl<'a> UnityYaml<'a> {
     }
 
     pub fn as_value<'b>(&'b self) -> Option<&'b LineValue<'a>> {
-        if self.children.lines.len() == 0 {
-            Some(&self.cur.value)
-        } else {
-            None
-        }
+        Some(&self.cur.value)
     }
 
     pub fn as_str<'b>(&'b self) -> Option<&'a str> {
