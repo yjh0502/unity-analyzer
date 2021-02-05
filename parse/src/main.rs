@@ -8,10 +8,8 @@ fn main() -> Result<()> {
 
     let sw = Stopwatch::start_new();
 
-    // let filename = "files/Art02_Humans.unity";
-    // let filename = "740/Assets/Prefabs/train.prefab";
-    // let filename = "740/Assets/Scenes/Game_Profiles/Main Camera Profile.asset";
-    let filename = "740/Assets/Prefabs/gameManager.prefab";
+    let args: Vec<String> = std::env::args().collect();
+    let filename = &args[0];
 
     let file = std::fs::read_to_string(filename)?;
 
