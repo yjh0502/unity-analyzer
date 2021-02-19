@@ -293,6 +293,8 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
         ));
     }
 
+    let mut list = Vec::new();
+
     for i in 0..(bundle_deps_list.len() - 1) {
         for j in (i + 1)..bundle_deps_list.len() {
             let set_i = &bundle_deps_list[i].1;
@@ -323,12 +325,35 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
                     .map(|guid| idx.try_asset_path_by_guid(guid))
                     .collect::<Option<Vec<_>>>();
 
+                let asset_len = match idx.asset_by_guid(guid) {
+                    Some(asset) => asset.text_len as u64,
+                    None => continue,
+                };
+
                 warn!(
-                    "a={}, b={}, asset={},\np1={:?}\np2={:?}",
-                    bundle_deps_list[i].0, bundle_deps_list[j].0, key, p1, p2,
+                    "a={}, b={}, asset={}, len={}\np1={:?}\np2={:?}",
+                    bundle_deps_list[i].0,
+                    bundle_deps_list[j].0,
+                    key,
+                    bytesize::ByteSize(asset_len),
+                    p1,
+                    p2,
                 );
+
+                list.push((asset_len, key));
             }
         }
+    }
+
+    list.sort_by(|a, b| b.0.cmp(&a.0));
+    let total = list.iter().fold(0, |acc, a| acc + a.0);
+
+    info!(
+        "duplicated assets size={}, top 10",
+        bytesize::ByteSize(total)
+    );
+    for tup in list.into_iter().take(10) {
+        info!("size={} asset={}", bytesize::ByteSize(tup.0), tup.1);
     }
 
     Ok(())

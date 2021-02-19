@@ -41,7 +41,13 @@ fn try_parse_path(mut path: PathBuf) -> Option<(PathBuf, AssetFile<'static>)> {
             }
         }
 
-        return Some((path, AssetFile::from_meta(meta)));
+        let mut meta = AssetFile::from_meta(meta);
+
+        if let Ok(filemeta) = std::fs::metadata(&path) {
+            meta.text_len = filemeta.len() as usize;
+        }
+
+        return Some((path, meta));
     }
 
     let content0 = std::fs::read_to_string(&path).ok()?;
