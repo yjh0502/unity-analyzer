@@ -11,7 +11,7 @@ use stopwatch::Stopwatch;
 fn main() -> Result<()> {
     env_logger::init();
 
-    let file = fs::File::open("types0")?;
+    let file = fs::File::open("types1")?;
     let lines = io::BufReader::new(file).lines();
 
     let sw = Stopwatch::start_new();
@@ -86,13 +86,18 @@ fn main() -> Result<()> {
     let mut out = counter.into_iter().collect::<Vec<_>>();
     out.sort_by(|a, b| b.1.cmp(&a.1));
 
-    println!("top occurences");
+    println!(
+        "total {} significant types, multiplication={:.2}",
+        out.len(),
+        (n - skipped) as f64 / out.len() as f64
+    );
+    println!("top occurrences");
     for (ty, count) in out.iter().take(20) {
         println!("{:8} {}", count, ty);
     }
 
     out.reverse();
-    println!("bottom occurences");
+    println!("bottom occurrences");
     for (ty, count) in out.iter().take(20) {
         println!("{:8} {}", count, ty);
     }

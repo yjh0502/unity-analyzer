@@ -17,7 +17,7 @@ pub trait TypeEnumerator<'a> {
 
 fn parse_plain_ident(i: &str) -> IResult<&str, Ident> {
     take_while1(|c: char| {
-        c.is_alphanumeric() || c == '!' || c == '`' || c == '_' || c == '&' || c == '|' || c == '-'
+        c.is_alphanumeric() || c == '!' || c == '`' || c == '_' || c == '|' || c == '-'
     })(i)
 }
 
@@ -225,7 +225,11 @@ pub enum Signature<'a> {
 impl<'a> TypeEnumerator<'a> for Signature<'a> {
     fn significant_types(&'a self) -> Vec<String> {
         match self {
-            Signature::Ty(ty) => ty.significant_types(),
+            Signature::Ty(_ty) => {
+                // TODO
+                // ty.significant_types()
+                Vec::new()
+            }
             Signature::Method(method) => method.significant_types(),
         }
     }
