@@ -4,31 +4,84 @@ use nom::combinator::*;
 use nom::multi::*;
 use nom::IResult;
 
-fn parse_plain_ident(i: &str) -> IResult<&str, &str> {
+type Ident<'a> = &'a str;
+
+pub trait TypeEnumerator<'a> {
+    fn significant_types(&'a self) -> Vec<String>;
+
+    fn append_significant_types(&'a self, v: &mut Vec<String>) {
+        let out = self.significant_types();
+        v.extend_from_slice(&out);
+    }
+}
+
+fn parse_plain_ident(i: &str) -> IResult<&str, Ident> {
     take_while1(|c: char| {
         c.is_alphanumeric() || c == '!' || c == '`' || c == '_' || c == '&' || c == '|' || c == '-'
     })(i)
 }
 
-// example: Foo<Bar>
-fn parse_namespace(i: &str) -> IResult<&str, &str> {
-    let (i, ident) = parse_plain_ident(i)?;
-    let (i, _generic) = opt(parse_generic_param)(i)?;
-
-    Ok((i, ident))
+#[derive(Debug, PartialEq, Eq)]
+struct Namespace<'a> {
+    pub ident: Ident<'a>,
+    pub generic: Vec<Type<'a>>,
 }
 
-fn parse_namespaces<'a>(i: &'a str) -> IResult<&'a str, &'a str> {
+// example: Foo<Bar>
+fn parse_namespace(i: &str) -> IResult<&str, Namespace> {
+    let (i, ident) = parse_plain_ident(i)?;
+    let (i, generic) = opt(parse_generic_param)(i)?;
+
+    let generic = generic.unwrap_or_else(Vec::new);
+    Ok((i, Namespace { ident, generic }))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Namespaces<'a> {
+    pub ns: Vec<Namespace<'a>>,
+}
+
+impl<'a> Namespaces<'a> {
+    fn from_ident(ident: &'a str) -> Self {
+        Self {
+            ns: vec![Namespace {
+                ident,
+                generic: Vec::new(),
+            }],
+        }
+    }
+}
+
+impl<'a> TypeEnumerator<'a> for Namespaces<'a> {
+    fn significant_types(&'a self) -> Vec<String> {
+        let mut v = Vec::new();
+        let mut s = String::new();
+        for ns in self.ns.iter() {
+            if s.len() != 0 {
+                s.push_str(".");
+            }
+            s.push_str(ns.ident);
+
+            for generic_ty in &ns.generic {
+                generic_ty.append_significant_types(&mut v);
+            }
+        }
+        v.push(s);
+        v
+    }
+}
+
+fn parse_namespaces<'a>(i: &'a str) -> IResult<&'a str, Namespaces<'a>> {
     if let Ok((i, _v)) = tag::<_, _, nom::error::Error<&'a str>>(".cctor")(i) {
-        return Ok((i, _v));
+        return Ok((i, Namespaces::from_ident(_v)));
     }
     if let Ok((i, _v)) = tag::<_, _, nom::error::Error<&'a str>>(".ctor")(i) {
-        return Ok((i, _v));
+        return Ok((i, Namespaces::from_ident(_v)));
     }
 
     let (i, idents) = separated_list1(tag("."), parse_namespace)(i)?;
 
-    Ok((i, idents[0]))
+    Ok((i, Namespaces { ns: idents }))
 }
 
 fn parse_mysterious_tags<'a>(i: &'a str) -> IResult<&'a str, ()> {
@@ -62,13 +115,11 @@ struct EmbeddedPrefix<'a> {
     ident: &'a str,
 }
 
-fn parse_type0<'a>(i: &'a str) -> IResult<&'a str, Type<'a>> {
+fn parse_type0<'a>(i: &'a str) -> IResult<&'a str, Namespaces<'a>> {
     // generic prefix
     let (i, _gen_prefix) = opt(parse_generic_param)(i)?;
 
-    let (i, ident) = parse_namespaces(i)?;
-
-    Ok((i, Type { ident }))
+    parse_namespaces(i)
 }
 
 fn parse_array_notation(i: &str) -> IResult<&str, ()> {
@@ -80,9 +131,8 @@ fn parse_array_notation(i: &str) -> IResult<&str, ()> {
 }
 
 fn parse_type<'a>(i: &'a str) -> IResult<&'a str, Type<'a>> {
-    let (i, mut _type_path) = separated_list1(tag("/"), parse_type0)(i)?;
+    let (i, _type_path) = separated_list1(tag("/"), parse_type0)(i)?;
 
-    // let (i, _type_gen) = opt(parse_generic_param)(i)?;
     let (i, _arr) = many0(parse_array_notation)(i)?;
     let (i, _pointer) = opt(tag("*"))(i)?;
 
@@ -91,7 +141,7 @@ fn parse_type<'a>(i: &'a str) -> IResult<&'a str, Type<'a>> {
     let (i, _reference) = opt(tag("&"))(i)?;
     let (i, _nullable) = opt(tag("?"))(i)?;
 
-    Ok((i, _type_path.pop().unwrap()))
+    Ok((i, Type { nss: _type_path }))
 }
 
 fn parse_type_maybe_tuple<'a>(i: &'a str) -> IResult<&'a str, Type<'a>> {
@@ -110,25 +160,40 @@ fn parse_type_maybe_tuple<'a>(i: &'a str) -> IResult<&'a str, Type<'a>> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Type<'a> {
-    ident: &'a str,
+    nss: Vec<Namespaces<'a>>,
 }
 
-#[derive(Debug)]
-pub struct Signature<'a> {
-    ret_ty: Type<'a>,
+impl<'a> TypeEnumerator<'a> for Type<'a> {
+    fn significant_types(&'a self) -> Vec<String> {
+        // TODO
+        let nss = &self.nss[0];
+        nss.significant_types()
+    }
 }
 
-fn parse_method_ident_normal<'a>(i: &'a str) -> IResult<&str, ()> {
-    let (i, _method_name) = parse_type(i)?;
-    let (i, _method_gen) = opt(parse_generic_param)(i)?;
-
-    Ok((i, ()))
+#[derive(Debug, PartialEq, Eq)]
+pub struct MethodPart<'a> {
+    ident: Type<'a>,
+    args: Vec<Type<'a>>,
 }
 
-fn parse_method_part<'a>(i: &'a str) -> IResult<&str, ()> {
+impl<'a> TypeEnumerator<'a> for MethodPart<'a> {
+    fn significant_types(&'a self) -> Vec<String> {
+        let mut v = self.ident.significant_types();
+        v.pop(); // UGLY HACK, remove ident
+
+        for arg in &self.args {
+            arg.append_significant_types(&mut v);
+        }
+
+        v
+    }
+}
+
+fn parse_method_part<'a>(i: &'a str) -> IResult<&str, MethodPart> {
     let (i, _) = tag("::")(i)?;
 
-    let (i, _method_ident) = parse_method_ident_normal(i)?;
+    let (i, _method_ident) = parse_type(i)?;
 
     let (i, _found) = opt(tag("."))(i)?;
 
@@ -140,23 +205,73 @@ fn parse_method_part<'a>(i: &'a str) -> IResult<&str, ()> {
     };
 
     let (i, _args) = opt(parse_arguments)(i)?;
+    let args = _args.unwrap_or_else(Vec::new);
 
-    Ok((i, ()))
+    Ok((
+        i,
+        MethodPart {
+            ident: _method_ident,
+            args,
+        },
+    ))
+}
+
+#[derive(Debug)]
+pub enum Signature<'a> {
+    Ty(Type<'a>),
+    Method(MethodSignature<'a>),
+}
+
+impl<'a> TypeEnumerator<'a> for Signature<'a> {
+    fn significant_types(&'a self) -> Vec<String> {
+        match self {
+            Signature::Ty(ty) => ty.significant_types(),
+            Signature::Method(method) => method.significant_types(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MethodSignature<'a> {
+    ret_ty: Type<'a>,
+    name: Type<'a>,
+    method_part: Option<MethodPart<'a>>,
+}
+
+impl<'a> TypeEnumerator<'a> for MethodSignature<'a> {
+    fn significant_types(&'a self) -> Vec<String> {
+        let mut v = self.ret_ty.significant_types();
+
+        self.name.append_significant_types(&mut v);
+
+        if let Some(ref part) = self.method_part {
+            part.append_significant_types(&mut v);
+        }
+
+        v
+    }
 }
 
 fn parse_signature0<'a>(i: &'a str) -> IResult<&str, Signature<'a>> {
-    let (i, _return) = parse_type(i)?;
+    let (i, ret_ty) = parse_type(i)?;
 
     if i.len() == 0 {
-        return Ok((i, Signature { ret_ty: _return }));
+        return Ok((i, Signature::Ty(ret_ty)));
     }
 
     let (i, _) = tag(" ")(i)?;
-    let (i, _name) = parse_type(i)?;
+    let (i, name) = parse_type(i)?;
 
-    let (i, _method_part) = opt(parse_method_part)(i)?;
+    let (i, method_part) = opt(parse_method_part)(i)?;
 
-    Ok((i, Signature { ret_ty: _return }))
+    Ok((
+        i,
+        Signature::Method(MethodSignature {
+            ret_ty,
+            name,
+            method_part,
+        }),
+    ))
 }
 
 pub fn parse_signature<'a>(s: &'a str) -> anyhow::Result<Signature<'a>> {
@@ -191,11 +306,12 @@ mod tests {
     fn test_namepsace() {
         let cases = &[
             //
-            ("Foo.Bar", ".Bar", "Foo"),
-            ("Foo<Bar>.Bar", ".Bar", "Foo"),
+            ("Foo.Bar", ".Bar"),
+            ("Foo<Bar>.Bar", ".Bar"),
         ];
         for case in cases {
-            assert_eq!(parse_namespace(case.0), Ok((case.1, case.2)));
+            let res = parse_namespace(case.0).unwrap();
+            assert_eq!(res.0, case.1);
         }
     }
 
