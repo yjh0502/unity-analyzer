@@ -3,7 +3,8 @@ members = [
     "gen",
     "parse",
     "unity-yaml",
-    "unitytui"
+    "unitytui",
+    "il2cpp"
 ]
 
 [profile.release]
