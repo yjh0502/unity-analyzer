@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.31"
 bytesize = "1"
-env_logger = "0.7.1"
+env_logger = "0.9"
 log = "0.4.11"
 nom = "6.1"
 stopwatch = "0.0.7"
