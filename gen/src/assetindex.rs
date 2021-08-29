@@ -206,14 +206,13 @@ impl AssetIndex {
 
         // tracking file-level intra-dependencies
         let sw = Stopwatch::start_new();
-        let mut refs = HashSet::new();
-        let mut num_objects = 0;
-        let mut total_len = 0;
+        let mut num_objects = 0usize;
+        let mut total_len = 0usize;
+
+        let mut forward_refs = Vec::new();
+
         for (_path, asset) in assets.iter() {
-            let src_guid = match &asset.meta {
-                Some(meta) => meta.guid.clone(),
-                None => String::new(),
-            };
+            let src_guid = asset.guid().unwrap_or("");
 
             total_len += asset.text_len;
             num_objects += asset.objects.len();
@@ -221,8 +220,8 @@ impl AssetIndex {
             for object in &asset.objects {
                 for reference in &object.references {
                     if let Some(guid) = &reference.guid {
-                        refs.insert(ForwardRef {
-                            src_guid: src_guid.clone(),
+                        forward_refs.push(ForwardRef {
+                            src_guid: src_guid.to_owned(),
                             src_file_id: object.header.file_id,
                             dst_guid: guid.clone(),
                             dst_file_id: reference.file_id,
@@ -232,19 +231,16 @@ impl AssetIndex {
             }
         }
 
+        forward_refs.sort();
+
         sw_step(&mut sw0, "analyzing-deps");
 
-        let mut forward_refs = refs.into_iter().collect::<Vec<_>>();
         let mut backward_refs = forward_refs.clone();
-        debug!("refs.len()={:?}", forward_refs.len());
-
-        forward_refs.sort();
         backward_refs.sort_by(|a, b| {
             a.dst_guid
                 .cmp(&b.dst_guid)
                 .then(a.dst_file_id.cmp(&b.dst_file_id))
         });
-        info!("analyzing-sort: {}ms", sw.elapsed_ms());
 
         sw_step(&mut sw0, "analyzing-sort");
 
