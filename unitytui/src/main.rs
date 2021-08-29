@@ -407,5 +407,7 @@ fn main() -> Result<()> {
     terminal.clear()?;
     terminal.show_cursor()?;
 
+    std::mem::forget(state);
+
     Ok(())
 }
