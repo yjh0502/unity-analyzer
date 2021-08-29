@@ -146,7 +146,10 @@ impl<'a> Object<'a> {
     }
 
     pub fn dbg_yaml(&self) -> Result<String> {
-        todo!();
+        use std::fmt::Write;
+        let mut s = String::new();
+        write!(&mut s, "{}{}", self.header, self.parsed)?;
+        Ok(s)
     }
 }
 

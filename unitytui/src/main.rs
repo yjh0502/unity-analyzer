@@ -1,5 +1,6 @@
 use argh::FromArgs;
 use std::{fmt::Display, io};
+use termion::event::Key;
 use termion::raw::IntoRawMode;
 use tui::{
     backend::TermionBackend,
@@ -7,6 +8,7 @@ use tui::{
     text::Spans,
 };
 
+use log::*;
 use tui::widgets::*;
 use tui::Terminal;
 
@@ -114,6 +116,10 @@ impl InitializedState {
         self.nav_states.last().and_then(|s| s.parent_file_id)
     }
 
+    fn cur_guid(&self) -> Option<String> {
+        self.nav_states.last().map(|s| s.file_guid.to_owned())
+    }
+
     fn cur_nav_state_mut(&mut self) -> &mut NavState {
         self.nav_states.last_mut().unwrap()
     }
@@ -161,8 +167,6 @@ impl InitializedState {
     }
 
     fn handle_input(&mut self, key: termion::event::Key) {
-        use termion::event::Key;
-
         let s = self;
         let file_ids = s.cur_file_ids().unwrap();
         let len = file_ids.len();
@@ -180,6 +184,17 @@ impl InitializedState {
         };
 
         match key {
+            Key::Char('r') => {
+                let cur_guid = s.cur_guid().unwrap();
+                let refs = s.index.backward_refs(&cur_guid);
+
+                for r in refs {
+                    let src_guid = &r.src_guid;
+                    let asset = s.index.asset_by_guid(src_guid);
+                    let path = s.index.try_asset_path_by_guid(src_guid);
+                    info!("{:?}, guid={}", path, src_guid);
+                }
+            }
             Key::Up | Key::Char('k') => {
                 move_cursor(false);
             }
@@ -339,7 +354,7 @@ fn main() -> Result<()> {
     use input::*;
 
     simplelog::CombinedLogger::init(vec![simplelog::WriteLogger::new(
-        log::LevelFilter::Trace,
+        log::LevelFilter::Debug,
         simplelog::Config::default(),
         std::fs::File::create("out.log").unwrap(),
     )])

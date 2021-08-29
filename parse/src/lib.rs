@@ -39,6 +39,17 @@ impl IndentSig {
     }
 }
 
+impl std::fmt::Display for IndentSig {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let (width, s) = if self.array_elem {
+            (self.indent + 2, "- ")
+        } else {
+            (self.indent, "")
+        };
+        write!(f, "{:>width$}", s, width = width)
+    }
+}
+
 /// 첫 줄이 array면 array iterator입니다.
 /// - a: <- next()
 ///   b: <- next()
@@ -83,6 +94,15 @@ impl<'a> UnityYamlIter<'a> {
             parse_object,
             cursor: 0,
         }
+    }
+}
+
+impl<'a> std::fmt::Display for UnityYamlIter<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for line in &self.lines {
+            write!(f, "{}", line)?;
+        }
+        Ok(())
     }
 }
 
@@ -173,6 +193,12 @@ impl<'a> UnityYaml<'a> {
     }
 }
 
+impl<'a> std::fmt::Display for UnityYaml<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}{}", self.cur, self.children)
+    }
+}
+
 #[derive(Debug)]
 pub struct UnityYamlObject<'a> {
     pub header: ObjectHeader,
@@ -214,11 +240,42 @@ pub struct ObjectHeader {
     pub stripped: bool,
 }
 
+impl std::fmt::Display for ObjectHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = if self.stripped { " stripped" } else { "" };
+        write!(f, "!u!{} &{}{}\n", self.object_id, self.file_id, s)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LineValue<'a> {
     None,
     Str(&'a str),
     Map(Vec<(&'a str, &'a str)>),
+}
+
+impl<'a> std::fmt::Display for LineValue<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self {
+            LineValue::None => {
+                write!(f, "\n")
+            }
+            LineValue::Str(inner) => {
+                write!(f, "{}\n", inner)
+            }
+            LineValue::Map(inner) => {
+                write!(f, "{{")?;
+                for i in 0..inner.len() {
+                    let tup = &inner[i];
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", tup.0, tup.1)?;
+                }
+                write!(f, "}}\n")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -232,6 +289,16 @@ impl<'a> Line<'a> {
     #[allow(unused)]
     fn new(indent: IndentSig, key: Option<&'a str>, value: LineValue<'a>) -> Self {
         Self { indent, key, value }
+    }
+}
+
+impl<'a> std::fmt::Display for Line<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.indent)?;
+        if let Some(ref k) = self.key {
+            write!(f, "{}: ", k)?;
+        }
+        write!(f, "{}", self.value)
     }
 }
 
