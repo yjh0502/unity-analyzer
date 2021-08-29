@@ -26,6 +26,9 @@ use select::*;
 struct TopLevel {
     #[argh(positional)]
     project_path: String,
+
+    #[argh(option, short = 'e', description = "entrypoint")]
+    entrypoint: Option<String>,
 }
 
 struct NavState {
@@ -382,8 +385,14 @@ fn main() -> Result<()> {
     if true {
         let index = assetindex::AssetIndex::from_path(&args.project_path)?;
 
-        let (_path, sample_guid) = index.scene_guids()?.first().unwrap().to_owned();
-        state = State::Initialized(InitializedState::new(index, sample_guid));
+        let guid = match args.entrypoint {
+            None => {
+                let (_path, guid) = index.scene_guids()?.first().unwrap().to_owned();
+                guid
+            }
+            Some(guid) => guid,
+        };
+        state = State::Initialized(InitializedState::new(index, guid));
     }
 
     loop {

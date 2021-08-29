@@ -26,8 +26,10 @@ impl InitializedState {
             }
             guids.insert(src_guid.to_owned());
 
-            let path = idx.try_asset_path_by_guid(src_guid);
-            items.push((format!("{:?}", path), src_guid.to_owned()));
+            if let Some(path) = idx.try_asset_path_by_guid(src_guid) {
+                let path = idx.asset_path_str(&path);
+                items.push((path, src_guid.to_owned()));
+            }
         }
 
         let list = ListInputState::new(0, items.len());
