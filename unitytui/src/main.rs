@@ -144,7 +144,18 @@ impl InitializedState {
     }
 
     fn handle_input(&mut self, key: termion::event::Key) {
-        if let Some(ref mut _s) = self.select_state {
+        if let Some(mut s) = self.select_state.take() {
+            match s.list.next_state(key) {
+                Some(InputNextState::Selected(idx)) => {
+                    let guid = s.items[idx].1.to_owned();
+                    self.nav_states.push(NavState::new(guid, None));
+                }
+                Some(InputNextState::Escaped) => {}
+                None => {
+                    s.list.handle_input(key);
+                    self.select_state = Some(s);
+                }
+            }
             return;
         }
 
@@ -199,7 +210,7 @@ impl InitializedState {
         }
     }
 
-    fn render_popup<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect, popup_state: PopupState)
+    fn render_detail<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect, popup_state: &mut PopupState)
     where
         B: tui::backend::Backend,
     {
@@ -272,10 +283,18 @@ impl InitializedState {
             f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state.l);
         }
 
-        if let Some(popup_state) = self.popup_state.clone() {
+        if let Some(mut popup_state) = self.popup_state.take() {
             helper::render_popup(f, rect, |f, r| {
-                self.render_popup(f, r, popup_state);
+                self.render_detail(f, r, &mut popup_state);
             });
+            self.popup_state = Some(popup_state);
+        }
+
+        if let Some(mut select_state) = self.select_state.take() {
+            helper::render_popup(f, rect, |f, r| {
+                self.render_reverse_ref(f, r, &mut select_state);
+            });
+            self.select_state = Some(select_state);
         }
     }
 }

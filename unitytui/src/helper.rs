@@ -56,14 +56,15 @@ pub enum InputNextState {
 }
 
 impl ListInputState {
-    #[allow(unused)]
-    pub fn from_selected(idx: usize) -> Self {
+    pub fn new(idx: usize, len: usize) -> Self {
         let mut l = ListState::default();
-        l.select(Some(idx));
+        if idx <= len {
+            l.select(Some(idx));
+        }
 
         Self {
             l,
-            len: idx,
+            len,
             selected: true,
         }
     }

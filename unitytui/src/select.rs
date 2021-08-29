@@ -5,8 +5,9 @@ use tui::Frame;
 
 #[derive(Clone)]
 pub struct StateReverseRef {
-    list: ListState,
-    items: Vec<(String, String)>,
+    pub list: ListInputState,
+
+    pub items: Vec<(String, String)>,
 }
 
 impl InitializedState {
@@ -29,10 +30,8 @@ impl InitializedState {
             items.push((format!("{:?}", path), src_guid.to_owned()));
         }
 
-        StateReverseRef {
-            list: ListState::default(),
-            items,
-        }
+        let list = ListInputState::new(0, items.len());
+        StateReverseRef { list, items }
     }
 
     #[allow(unused)]
@@ -55,6 +54,6 @@ impl InitializedState {
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol("> ");
 
-        f.render_stateful_widget(items, rect, &mut state.list);
+        f.render_stateful_widget(items, rect, &mut state.list.l);
     }
 }
