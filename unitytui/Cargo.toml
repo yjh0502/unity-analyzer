@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-argh = "0.1"
+argh = { git = "https://github.com/google/argh.git" }
 gen = { path = "../gen" }
 termion = "1"
 tui = "0.13"
