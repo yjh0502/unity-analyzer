@@ -76,6 +76,7 @@ impl NavState {
     }
 }
 
+#[derive(Clone)]
 struct PopupState {
     #[allow(unused)]
     file_guid: String,
@@ -173,6 +174,7 @@ impl InitializedState {
 
         let nav_state = s.cur_nav_state_mut();
         let list_state = &mut nav_state.list_state;
+        let selected = list_state.selected();
 
         let mut move_cursor = |forward: bool| {
             if let Some(idx) = list_state.selected() {
@@ -190,16 +192,18 @@ impl InitializedState {
 
                 for r in refs {
                     let src_guid = &r.src_guid;
-                    let asset = s.index.asset_by_guid(src_guid);
+                    // let asset = s.index.asset_by_guid(src_guid);
                     let path = s.index.try_asset_path_by_guid(src_guid);
                     info!("{:?}, guid={}", path, src_guid);
                 }
             }
             Key::Up | Key::Char('k') => {
                 move_cursor(false);
+                s.popup_state = None;
             }
             Key::Down | Key::Char('j') => {
                 move_cursor(true);
+                s.popup_state = None;
             }
             Key::Left | Key::Esc | Key::Char('h') => {
                 if s.popup_state.is_some() {
@@ -209,17 +213,36 @@ impl InitializedState {
                 }
             }
             Key::Right | Key::Char('l') | Key::Char('\n') => {
-                if let Some(idx) = list_state.selected() {
+                if let Some(idx) = selected {
                     s.select_item(idx);
+                    s.popup_state = None;
                 }
             }
             Key::Char('d') => {
-                if let Some(idx) = list_state.selected() {
+                if let Some(idx) = selected {
                     s.show_detail(idx);
                 }
             }
             _ => (),
         }
+    }
+
+    fn render_popup<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect, popup_state: PopupState)
+    where
+        B: tui::backend::Backend,
+    {
+        let file = self.cur_file().unwrap();
+        let block = Block::default().title("detail").borders(Borders::ALL);
+
+        let obj = file.object_by_file_id(popup_state.file_id).unwrap();
+        let yaml = obj.dbg_yaml().unwrap();
+
+        let spans = yaml.split('\n').map(|s| Spans::from(s)).collect::<Vec<_>>();
+        let p = Paragraph::new(spans);
+
+        f.render_widget(Clear, rect); //this clears out the background
+        f.render_widget(p, block.inner(rect));
+        f.render_widget(block, rect);
     }
 
     fn render<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
@@ -232,10 +255,10 @@ impl InitializedState {
             .split(rect);
 
         let idx = &self.index;
+        let file = self.cur_file().unwrap();
 
         // header
         {
-            let file = self.cur_file().unwrap();
             let filename = file
                 .guid()
                 .and_then(|guid| idx.try_asset_path_by_guid(&guid))
@@ -251,7 +274,6 @@ impl InitializedState {
 
         // body
         {
-            let file = self.cur_file().unwrap();
             let file_ids = self.cur_file_ids().unwrap();
 
             let mut list = Vec::new();
@@ -281,22 +303,9 @@ impl InitializedState {
             f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state);
         }
 
-        if let Some(ref popup_state) = self.popup_state {
-            let file = self.cur_file().unwrap();
-            let block = Block::default().title("detail").borders(Borders::ALL);
-
+        if let Some(popup_state) = self.popup_state.clone() {
             let area = helper::centered_rect(80, 80, rect);
-
-            let obj = file.object_by_file_id(popup_state.file_id).unwrap();
-
-            let yaml = obj.dbg_yaml().unwrap();
-
-            let spans = yaml.split('\n').map(|s| Spans::from(s)).collect::<Vec<_>>();
-            let p = Paragraph::new(spans);
-
-            f.render_widget(Clear, area); //this clears out the background
-            f.render_widget(p, block.inner(area));
-            f.render_widget(block, area);
+            self.render_popup(f, area, popup_state);
         }
     }
 }
