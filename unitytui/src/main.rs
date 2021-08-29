@@ -8,7 +8,6 @@ use tui::{
     text::Spans,
 };
 
-use log::*;
 use tui::widgets::*;
 use tui::Terminal;
 
@@ -16,39 +15,11 @@ use gen::*;
 
 type Result<T> = anyhow::Result<T>;
 
+mod helper;
+use helper::*;
 mod input;
-
-mod helper {
-    use tui::layout::{Constraint, Direction, Layout, Rect};
-
-    /// helper function to create a centered rect using up
-    /// certain percentage of the available rect `r`
-    pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-        let popup_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Percentage((100 - percent_y) / 2),
-                    Constraint::Percentage(percent_y),
-                    Constraint::Percentage((100 - percent_y) / 2),
-                ]
-                .as_ref(),
-            )
-            .split(r);
-
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(
-                [
-                    Constraint::Percentage((100 - percent_x) / 2),
-                    Constraint::Percentage(percent_x),
-                    Constraint::Percentage((100 - percent_x) / 2),
-                ]
-                .as_ref(),
-            )
-            .split(popup_layout[1])[1]
-    }
-}
+mod select;
+use select::*;
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "top level")]
@@ -58,18 +29,15 @@ struct TopLevel {
 }
 
 struct NavState {
-    list_state: ListState,
+    list_state: ListInputState,
     file_guid: String,
     parent_file_id: Option<i64>,
 }
 
 impl NavState {
     fn new(file_guid: String, parent_file_id: Option<i64>) -> NavState {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-
         Self {
-            list_state,
+            list_state: ListInputState::default(),
             file_guid,
             parent_file_id,
         }
@@ -83,21 +51,26 @@ struct PopupState {
     file_id: i64,
 }
 
-struct InitializedState {
-    index: assetindex::AssetIndex,
+pub struct InitializedState {
+    pub index: assetindex::AssetIndex,
     nav_states: Vec<NavState>,
 
+    select_state: Option<StateReverseRef>,
     popup_state: Option<PopupState>,
 }
 
 impl InitializedState {
     fn new(index: assetindex::AssetIndex, file_guid: String) -> Self {
-        Self {
+        let mut s = Self {
             index,
             nav_states: vec![NavState::new(file_guid, None)],
 
+            select_state: None,
             popup_state: None,
-        }
+        };
+
+        s.hierarchy_set_len();
+        s
     }
 }
 
@@ -136,10 +109,6 @@ impl InitializedState {
     }
 
     fn show_detail(&mut self, selected_idx: usize) {
-        if self.popup_state.is_some() {
-            return;
-        }
-
         let file_ids = self.cur_file_ids().unwrap();
 
         let nav_state = self.nav_states.last().unwrap();
@@ -150,80 +119,83 @@ impl InitializedState {
         self.popup_state = Some(popup_state);
     }
 
-    fn select_item(&mut self, selected_idx: usize) {
+    fn select_item(&mut self, selected_idx: usize) -> bool {
         let file_ids = self.cur_file_ids().unwrap();
         let selected = file_ids[selected_idx];
 
         let cur_file = self.cur_file().unwrap();
 
-        if let Some(guid) = cur_file.prefab_source_guid(selected) {
+        let ret = if let Some(guid) = cur_file.prefab_source_guid(selected) {
             let guid = guid.to_owned();
             self.nav_states.push(NavState::new(guid, None));
+            true
         // follow prefab?
         } else if self.child_count(selected).unwrap() > 0 {
             let guid = cur_file.guid().unwrap();
             let state = NavState::new(guid.to_owned(), Some(selected));
             self.nav_states.push(state);
-        }
+            true
+        } else {
+            false
+        };
+
+        self.hierarchy_set_len();
+        ret
     }
 
     fn handle_input(&mut self, key: termion::event::Key) {
-        let s = self;
-        let file_ids = s.cur_file_ids().unwrap();
-        let len = file_ids.len();
+        if let Some(ref mut _s) = self.select_state {
+            return;
+        }
 
-        let nav_state = s.cur_nav_state_mut();
+        self.handle_input_hierarchy(key)
+    }
+
+    fn hierarchy_set_len(&mut self) {
+        let list_len = self.cur_file_ids().unwrap().len();
+        let nav_state = self.cur_nav_state_mut();
         let list_state = &mut nav_state.list_state;
-        let selected = list_state.selected();
+        list_state.len = list_len;
 
-        let mut move_cursor = |forward: bool| {
-            if let Some(idx) = list_state.selected() {
-                let idx = if forward { idx + 1 } else { idx + len - 1 };
-                list_state.select(Some(idx % len));
-            } else if len > 0 {
-                list_state.select(Some(0));
-            }
-        };
+        if list_state.l.selected().is_none() && list_len > 0 {
+            list_state.l.select(Some(0));
+        }
+    }
+
+    fn handle_input_hierarchy(&mut self, key: termion::event::Key) {
+        let s = self;
+
+        s.hierarchy_set_len();
+        let list_state = &mut s.cur_nav_state_mut().list_state;
 
         match key {
             Key::Char('r') => {
                 let cur_guid = s.cur_guid().unwrap();
-                let refs = s.index.backward_refs(&cur_guid);
+                s.select_state = Some(s.state_reverse_ref(&cur_guid));
+            }
+            _ => match list_state.next_state(key) {
+                Some(InputNextState::Selected(idx)) => {
+                    if s.select_item(idx) {
+                        s.popup_state = None;
+                    }
+                }
+                Some(InputNextState::Escaped) => {
+                    if s.popup_state.is_some() {
+                        s.popup_state = None;
+                    } else if s.nav_states.len() > 1 {
+                        s.nav_states.pop();
+                    }
+                }
+                None => {
+                    list_state.handle_input(key);
 
-                for r in refs {
-                    let src_guid = &r.src_guid;
-                    // let asset = s.index.asset_by_guid(src_guid);
-                    let path = s.index.try_asset_path_by_guid(src_guid);
-                    info!("{:?}, guid={}", path, src_guid);
+                    if let Some(idx) = list_state.selected() {
+                        s.show_detail(idx);
+                    } else {
+                        s.popup_state = None;
+                    }
                 }
-            }
-            Key::Up | Key::Char('k') => {
-                move_cursor(false);
-                s.popup_state = None;
-            }
-            Key::Down | Key::Char('j') => {
-                move_cursor(true);
-                s.popup_state = None;
-            }
-            Key::Left | Key::Esc | Key::Char('h') => {
-                if s.popup_state.is_some() {
-                    s.popup_state = None;
-                } else if s.nav_states.len() > 1 {
-                    s.nav_states.pop();
-                }
-            }
-            Key::Right | Key::Char('l') | Key::Char('\n') => {
-                if let Some(idx) = selected {
-                    s.select_item(idx);
-                    s.popup_state = None;
-                }
-            }
-            Key::Char('d') => {
-                if let Some(idx) = selected {
-                    s.show_detail(idx);
-                }
-            }
-            _ => (),
+            },
         }
     }
 
@@ -232,7 +204,6 @@ impl InitializedState {
         B: tui::backend::Backend,
     {
         let file = self.cur_file().unwrap();
-        let block = Block::default().title("detail").borders(Borders::ALL);
 
         let obj = file.object_by_file_id(popup_state.file_id).unwrap();
         let yaml = obj.dbg_yaml().unwrap();
@@ -240,9 +211,7 @@ impl InitializedState {
         let spans = yaml.split('\n').map(|s| Spans::from(s)).collect::<Vec<_>>();
         let p = Paragraph::new(spans);
 
-        f.render_widget(Clear, rect); //this clears out the background
-        f.render_widget(p, block.inner(rect));
-        f.render_widget(block, rect);
+        f.render_widget(p, rect);
     }
 
     fn render<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
@@ -300,12 +269,13 @@ impl InitializedState {
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD))
                 .highlight_symbol("> ");
 
-            f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state);
+            f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state.l);
         }
 
         if let Some(popup_state) = self.popup_state.clone() {
-            let area = helper::centered_rect(80, 80, rect);
-            self.render_popup(f, area, popup_state);
+            helper::render_popup(f, rect, |f, r| {
+                self.render_popup(f, r, popup_state);
+            });
         }
     }
 }
@@ -342,19 +312,15 @@ impl State {
     {
         let size = f.size();
 
-        let block = Block::default().title("Block").borders(Borders::ALL);
-        let inner = block.inner(size);
-        f.render_widget(block, size);
-
         let body = match self {
             State::Uninitialized => Span::raw("uninitialized"),
             State::Initializing => Span::raw("initializing"),
             State::Initialized(ref mut s) => {
-                s.render(f, inner);
+                s.render(f, size);
                 return;
             }
         };
-        f.render_widget(Paragraph::new(body), inner);
+        f.render_widget(Paragraph::new(body), size);
         //
     }
 }
