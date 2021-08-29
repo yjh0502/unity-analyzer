@@ -229,7 +229,7 @@ pub struct AssetFile<'a> {
     // file_id -> objects idx
     file_id_indices: HashMap<i64, usize>,
 
-    // heirarchy_index
+    // hierarchy_index
     pub index: HierarchyIndex,
 }
 

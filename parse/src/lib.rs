@@ -353,7 +353,7 @@ fn parse_yaml_keyvalue_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineVa
 fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
     use nom::error::*;
 
-    if i.len() > 3 && &i[0..3] == "---" {
+    if i.len() > 5 && &i[0..5] == "\n--- " {
         return Err(nom::Err::Error(nom::error::Error::new(
             "looks like an object header",
             ErrorKind::Tag,
@@ -488,6 +488,14 @@ mod tests {
         let line = "\n      - 0.37482873";
         let res = parse_yaml_like(line);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn parse_object_header() {
+        let line = "\n--- !u!123 &456";
+
+        let res = parse_yaml_like(line);
+        assert!(res.is_err());
     }
 
     #[test]
@@ -684,5 +692,8 @@ Prefab:
             eprintln!("out={:?}", e);
         }
         assert!(out.is_ok());
+
+        let objects = out.unwrap().1.objects;
+        assert_eq!(objects.len(), 4);
     }
 }

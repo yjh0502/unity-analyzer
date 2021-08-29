@@ -338,6 +338,13 @@ impl State {
 fn main() -> Result<()> {
     use input::*;
 
+    simplelog::CombinedLogger::init(vec![simplelog::WriteLogger::new(
+        log::LevelFilter::Trace,
+        simplelog::Config::default(),
+        std::fs::File::create("out.log").unwrap(),
+    )])
+    .unwrap();
+
     let args: TopLevel = argh::from_env();
 
     let stdout = io::stdout().into_raw_mode()?;
@@ -351,7 +358,7 @@ fn main() -> Result<()> {
     if true {
         let index = assetindex::AssetIndex::from_path(&args.project_path)?;
 
-        let (_path, sample_guid) = index.scene_guids()?.pop().unwrap();
+        let (_path, sample_guid) = index.scene_guids()?.first().unwrap().to_owned();
         state = State::Initialized(InitializedState::new(index, sample_guid));
     }
 
@@ -360,11 +367,12 @@ fn main() -> Result<()> {
 
         let ev = events.next()?;
         match ev {
-            Event::Input(key) => {
-                if let State::Initialized(ref mut s) = state {
+            Event::Input(key) => match state {
+                State::Initialized(ref mut s) => {
                     s.handle_input(key);
                 }
-            }
+                _ => {}
+            },
             Event::Exit => {
                 break;
             }
