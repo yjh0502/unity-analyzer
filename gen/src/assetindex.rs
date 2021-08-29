@@ -497,7 +497,7 @@ impl AssetIndex {
         Ok(danglings)
     }
 
-    fn asset_path_str(&self, path: &Path) -> String {
+    pub fn asset_path_str(&self, path: &Path) -> String {
         let stripped = path
             .strip_prefix(&self.root)
             .expect("failed to strip prefix");

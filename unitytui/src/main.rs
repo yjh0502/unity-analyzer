@@ -225,6 +225,67 @@ impl InitializedState {
         f.render_widget(p, rect);
     }
 
+    fn render_header<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
+    where
+        B: tui::backend::Backend,
+    {
+        let idx = &self.index;
+        let file = self.cur_file().unwrap();
+
+        let filename = file
+            .guid()
+            .and_then(|guid| idx.try_asset_path_by_guid(&guid))
+            .map(|p| idx.asset_path_str(&p))
+            .unwrap_or_else(|| "<unknown>".to_owned());
+
+        let text = format!(
+            "path={} stats={} d={}",
+            filename,
+            idx.dbg_stats(),
+            self.nav_states.len(),
+        );
+        f.render_widget(
+            Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
+            rect,
+        );
+    }
+
+    fn render_hierarchy<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
+    where
+        B: tui::backend::Backend,
+    {
+        let idx = &self.index;
+        let file = self.cur_file().unwrap();
+
+        let file_ids = self.cur_file_ids().unwrap();
+
+        let mut list = Vec::new();
+        for file_id in file_ids {
+            let is_prefab = file
+                .object_by_file_id(file_id)
+                .unwrap()
+                .is_prefab_transform();
+
+            let name = file
+                .name_by_file_id_ref(file_id, idx)
+                .unwrap_or("<unknown>".to_owned());
+            let child_count = file.by_parent(Some(file_id)).map(|v| v.len()).unwrap_or(0);
+
+            let annotation = Annotation {
+                is_prefab,
+                child_count,
+            };
+
+            list.push(ListItem::new(format!("{}{}", name, annotation)));
+        }
+
+        let items = List::new(list)
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol("> ");
+
+        f.render_stateful_widget(items, rect, &mut self.cur_nav_state_mut().list_state.l);
+    }
+
     fn render<B>(&mut self, f: &mut tui::Frame<B>, rect: Rect)
     where
         B: tui::backend::Backend,
@@ -234,54 +295,8 @@ impl InitializedState {
             .constraints([Constraint::Length(2), Constraint::Min(0)].as_ref())
             .split(rect);
 
-        let idx = &self.index;
-        let file = self.cur_file().unwrap();
-
-        // header
-        {
-            let filename = file
-                .guid()
-                .and_then(|guid| idx.try_asset_path_by_guid(&guid))
-                .and_then(|p| p.to_str())
-                .unwrap_or("<unknown>");
-
-            let text = format!("initialized path={} stats={}", filename, idx.dbg_stats());
-            f.render_widget(
-                Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }),
-                chunks[0],
-            );
-        }
-
-        // body
-        {
-            let file_ids = self.cur_file_ids().unwrap();
-
-            let mut list = Vec::new();
-            for file_id in file_ids {
-                let is_prefab = file
-                    .object_by_file_id(file_id)
-                    .unwrap()
-                    .is_prefab_transform();
-
-                let name = file
-                    .name_by_file_id_ref(file_id, idx)
-                    .unwrap_or("<unknown>".to_owned());
-                let child_count = file.by_parent(Some(file_id)).map(|v| v.len()).unwrap_or(0);
-
-                let annotation = Annotation {
-                    is_prefab,
-                    child_count,
-                };
-
-                list.push(ListItem::new(format!("{}{}", name, annotation)));
-            }
-
-            let items = List::new(list)
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                .highlight_symbol("> ");
-
-            f.render_stateful_widget(items, chunks[1], &mut self.cur_nav_state_mut().list_state.l);
-        }
+        self.render_header(f, chunks[0]);
+        self.render_hierarchy(f, chunks[1]);
 
         if let Some(mut popup_state) = self.popup_state.take() {
             helper::render_popup(f, rect, |f, r| {
