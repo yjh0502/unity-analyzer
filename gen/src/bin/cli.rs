@@ -28,6 +28,8 @@ enum SubCommands {
     Parse(CommandParse),
     ListFiles(CommandListFiles),
     ListRefs(CommandListRefs),
+
+    Graphviz(CommandGraphviz),
 }
 
 #[derive(FromArgs, Debug)]
@@ -92,6 +94,16 @@ struct CommandListFiles {
 struct CommandListRefs {
     #[argh(positional)]
     file: String,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "graphviz", description = "graphviz")]
+struct CommandGraphviz {
+    #[argh(positional)]
+    dir: String,
+
+    #[argh(option, short = 'o', description = "output filename")]
+    output: String,
 }
 
 fn cmd_typegen(cmd: CommandTypeGen) -> Result<()> {
@@ -246,6 +258,47 @@ fn cmd_danglings(v: CommandDanglings) -> Result<()> {
     for path in danglings {
         write!(&mut file, "{}\n", path.display())?;
     }
+
+    // it could took a long time to drop a full index, so just forget it
+    std::mem::forget(idx);
+
+    Ok(())
+}
+
+fn cmd_graphviz(v: CommandGraphviz) -> Result<()> {
+    use std::collections::HashSet;
+
+    let idx = assetindex::AssetIndex::from_path(&v.dir)?;
+
+    let file = File::create(v.output)?;
+    let mut file = std::io::BufWriter::new(file);
+
+    let danglings = idx.danglings(vec![])?.into_iter().collect::<HashSet<_>>();
+
+    write!(&mut file, "digraph {{\n")?;
+    for (guid, name) in &idx.asset_guids {
+        let path = name.strip_prefix(&idx.root)?;
+
+        if danglings.contains(path) {
+            continue;
+        }
+
+        write!(
+            &mut file,
+            "{:?} [ label={:?} fixedsize=true width=2 ]\n",
+            guid, path
+        )?;
+    }
+
+    for forward in &idx.forward_refs {
+        write!(
+            &mut file,
+            "{:?} -> {:?}\n",
+            forward.src_guid, forward.dst_guid
+        )?;
+        //
+    }
+    write!(&mut file, "}}\n")?;
 
     // it could took a long time to drop a full index, so just forget it
     std::mem::forget(idx);
@@ -444,5 +497,6 @@ fn main() -> Result<()> {
         SubCommands::Parse(v) => cmd_parse(v),
         SubCommands::ListFiles(v) => cmd_list_files(v),
         SubCommands::ListRefs(v) => cmd_list_refs(v),
+        SubCommands::Graphviz(v) => cmd_graphviz(v),
     }
 }

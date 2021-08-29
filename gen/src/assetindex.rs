@@ -146,19 +146,19 @@ pub struct ForwardRef {
 }
 
 pub struct AssetIndex {
-    root: PathBuf,
+    pub root: PathBuf,
 
     /// path -> AssetFile
     pub assets: HashMap<PathBuf, AssetFile<'static>>,
 
     /// guid -> Path
-    asset_guids: HashMap<String, PathBuf>,
+    pub asset_guids: HashMap<String, PathBuf>,
 
     /// sorted forward references, sort by (src_guid, src_file_id)
-    forward_refs: Vec<ForwardRef>,
+    pub forward_refs: Vec<ForwardRef>,
 
     /// sorted backward references, sort by (dst_guid, dst_file_id)
-    backward_refs: Vec<ForwardRef>,
+    pub backward_refs: Vec<ForwardRef>,
 }
 
 fn sw_step(sw: &mut stopwatch::Stopwatch, label: &'static str) {
@@ -432,7 +432,7 @@ impl AssetIndex {
         decoded
     }
 
-    pub fn danglings(&self, includes: Vec<String>) -> Result<Vec<PathBuf>> {
+    pub fn root_set(&self, includes: Vec<String>) -> Result<Vec<String>> {
         let resources_dir = Path::join(&self.root, "Assets/Resources");
         let streaming_assets_dir = Path::join(&self.root, "Assets/StreamingAssets");
 
@@ -476,6 +476,11 @@ impl AssetIndex {
             }
         }
 
+        Ok(queue)
+    }
+
+    pub fn danglings(&self, includes: Vec<String>) -> Result<Vec<PathBuf>> {
+        let queue = self.root_set(includes)?;
         info!("roots={}", queue.len());
 
         let visited = self.deps(&queue);
