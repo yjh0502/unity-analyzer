@@ -3,7 +3,7 @@ use std::{fmt::Display, io};
 use termion::event::Key;
 use termion::raw::IntoRawMode;
 use tui::{
-    backend::TermionBackend,
+    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     text::Spans,
 };
@@ -375,7 +375,7 @@ fn main() -> Result<()> {
     let args: TopLevel = argh::from_env();
 
     let stdout = io::stdout().into_raw_mode()?;
-    let backend = TermionBackend::new(stdout);
+    let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 

@@ -8,9 +8,9 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-argh = { git = "https://github.com/google/argh.git" }
+argh = "0.1.7"
 gen = { path = "../gen" }
 log = "*"
 simplelog = "*"
 termion = "1"
-tui = "0.16"
+tui = "0.17"
