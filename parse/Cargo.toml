@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.31"
-bytesize = "1"
-env_logger = "0.9"
+bytesize = "2"
+env_logger = "0.11"
 log = "0.4.11"
 nom = "7"
 stopwatch = "0.0.7"
