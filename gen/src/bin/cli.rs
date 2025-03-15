@@ -331,8 +331,6 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
         return Ok(());
     }
 
-    // eprintln!("{:?}", bundles);
-
     let mut bundle_deps_list = Vec::new();
     for (bundle_name, bundle_roots) in bundles.into_iter() {
         let (asset_deps, _bundle_deps) = idx.assetbundle_deps(&bundle_name, &bundle_roots);
@@ -367,6 +365,12 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
                     format!("guid={}", guid)
                 };
 
+                let asset_len = match idx.asset_by_guid(guid) {
+                    Some(asset) => asset.text_len as u64,
+                    None => continue,
+                };
+
+                /*
                 let p1 = idx
                     .decode_path(&bundle_deps_list[i].2, guid)
                     .iter()
@@ -378,11 +382,6 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
                     .map(|guid| idx.try_asset_path_by_guid(guid))
                     .collect::<Option<Vec<_>>>();
 
-                let asset_len = match idx.asset_by_guid(guid) {
-                    Some(asset) => asset.text_len as u64,
-                    None => continue,
-                };
-
                 warn!(
                     "a={}, b={}, asset={}, len={}\np1={:?}\np2={:?}",
                     bundle_deps_list[i].0,
@@ -392,6 +391,7 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
                     p1,
                     p2,
                 );
+                */
 
                 list.push((asset_len, key));
             }
