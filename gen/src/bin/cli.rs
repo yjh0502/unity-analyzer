@@ -331,11 +331,40 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
         return Ok(());
     }
 
+    struct AssetDeps<'a> {
+        guid: String,
+        len: u64,
+        bundles: Vec<&'a str>,
+    }
+
+    let mut assets = HashMap::<String, AssetDeps>::new();
     let mut bundle_deps_list = Vec::new();
+
     for (bundle_name, bundle_roots) in bundles.into_iter() {
         let (asset_deps, _bundle_deps) = idx.assetbundle_deps(&bundle_name, &bundle_roots);
 
         info!("bundle={}, deps={:?}", bundle_name, _bundle_deps);
+
+        for guid in asset_deps.iter() {
+            let asset_len = match idx.asset_by_guid(guid) {
+                Some(asset) => asset.text_len as u64,
+                None => continue,
+            };
+
+            match assets.entry(guid.to_owned()) {
+                Occupied(mut v) => {
+                    v.get_mut().bundles.push(bundle_name);
+                }
+                Vacant(v) => {
+                    v.insert(AssetDeps {
+                        guid: guid.to_owned(),
+                        len: asset_len,
+                        bundles: vec![bundle_name],
+                    });
+                }
+            }
+        }
+
         bundle_deps_list.push((
             bundle_name,
             asset_deps,
@@ -344,69 +373,38 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
         ));
     }
 
-    let mut list = Vec::new();
+    let mut list = assets
+        .values()
+        .filter(|v| v.bundles.len() > 2)
+        .collect::<Vec<_>>();
+    list.sort_by(|a, b| {
+        let size_a = (a.len - 1) * a.bundles.len() as u64;
+        let size_b = (b.len - 1) * b.bundles.len() as u64;
+        size_b.cmp(&size_a)
+    });
 
-    for i in 0..(bundle_deps_list.len() - 1) {
-        for j in (i + 1)..bundle_deps_list.len() {
-            let set_i = &bundle_deps_list[i].1;
-            let set_j = &bundle_deps_list[j].1;
-
-            for guid in set_i.intersection(&set_j) {
-                let key = if let Some(path) = idx.try_asset_path_by_guid(guid) {
-                    if let Some(str_path) = path.to_str() {
-                        if str_path.ends_with(".cs") {
-                            continue;
-                        }
-                        format!("path={:?}", str_path)
-                    } else {
-                        continue;
-                    }
-                } else {
-                    format!("guid={}", guid)
-                };
-
-                let asset_len = match idx.asset_by_guid(guid) {
-                    Some(asset) => asset.text_len as u64,
-                    None => continue,
-                };
-
-                /*
-                let p1 = idx
-                    .decode_path(&bundle_deps_list[i].2, guid)
-                    .iter()
-                    .map(|guid| idx.try_asset_path_by_guid(guid))
-                    .collect::<Option<Vec<_>>>();
-                let p2 = idx
-                    .decode_path(&bundle_deps_list[j].2, guid)
-                    .iter()
-                    .map(|guid| idx.try_asset_path_by_guid(guid))
-                    .collect::<Option<Vec<_>>>();
-
-                warn!(
-                    "a={}, b={}, asset={}, len={}\np1={:?}\np2={:?}",
-                    bundle_deps_list[i].0,
-                    bundle_deps_list[j].0,
-                    key,
-                    bytesize::ByteSize(asset_len),
-                    p1,
-                    p2,
-                );
-                */
-
-                list.push((asset_len, key));
+    let print_len = 20;
+    info!("duplicated assets, top {}", print_len);
+    for dup in list.into_iter().take(print_len) {
+        let key = if let Some(path) = idx.try_asset_path_by_guid(&dup.guid) {
+            if let Some(str_path) = path.to_str() {
+                if str_path.ends_with(".cs") {
+                    continue;
+                }
+                format!("path={:?}", str_path)
+            } else {
+                continue;
             }
-        }
-    }
+        } else {
+            format!("guid={}", dup.guid)
+        };
 
-    list.sort_by(|a, b| b.0.cmp(&a.0));
-    let total = list.iter().fold(0, |acc, a| acc + a.0);
-
-    info!(
-        "duplicated assets size={}, top 10",
-        bytesize::ByteSize(total)
-    );
-    for tup in list.into_iter().take(10) {
-        info!("size={} asset={}", bytesize::ByteSize(tup.0), tup.1);
+        info!(
+            "count={} size={} asset={}",
+            dup.bundles.len(),
+            bytesize::ByteSize((dup.bundles.len() as u64 - 1) * dup.len),
+            key
+        );
     }
 
     Ok(())

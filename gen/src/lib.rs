@@ -150,6 +150,8 @@ pub struct FileInfo {
     pub guid: String,
     pub NativeFormatImporter: Option<NativeFormatImporter>,
     pub PrefabImporter: Option<NativeFormatImporter>,
+    pub TextureImporter: Option<NativeFormatImporter>,
+    pub ModelImporter: Option<NativeFormatImporter>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -174,6 +176,7 @@ impl FileInfo {
         {
             return Some(v);
         }
+
         if let Some(ref v) = self
             .PrefabImporter
             .as_ref()
@@ -181,6 +184,23 @@ impl FileInfo {
         {
             return Some(v);
         }
+
+        if let Some(ref v) = self
+            .TextureImporter
+            .as_ref()
+            .and_then(|v| v.assetBundleName.as_ref())
+        {
+            return Some(v);
+        }
+
+        if let Some(ref v) = self
+            .ModelImporter
+            .as_ref()
+            .and_then(|v| v.assetBundleName.as_ref())
+        {
+            return Some(v);
+        }
+
         None
     }
 }
