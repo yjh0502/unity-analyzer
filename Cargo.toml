@@ -4,8 +4,12 @@ members = [
     "parse",
     "unity-yaml",
     "unitytui",
-    "il2cpp"
+    "il2cpp",
+    "stopwatch"
 ]
 
 [profile.release]
 debug = true
+
+[patch.crates-io]
+stopwatch = { path = "stopwatch" }
