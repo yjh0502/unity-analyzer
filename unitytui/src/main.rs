@@ -81,7 +81,7 @@ use tui::style::*;
 use tui::text::{Span, Text};
 
 impl InitializedState {
-    fn cur_file(&self) -> Result<&AssetFile> {
+    fn cur_file(&self) -> Result<&AssetFile<'_>> {
         let idx = &self.index;
         let state = self.nav_states.last().unwrap();
 

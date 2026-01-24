@@ -15,7 +15,7 @@ pub trait TypeEnumerator<'a> {
     }
 }
 
-fn parse_plain_ident(i: &str) -> IResult<&str, Ident> {
+fn parse_plain_ident(i: &str) -> IResult<&str, Ident<'_>> {
     take_while1(|c: char| {
         c.is_alphanumeric() || c == '!' || c == '`' || c == '_' || c == '|' || c == '-'
     })(i)
@@ -28,7 +28,7 @@ struct Namespace<'a> {
 }
 
 // example: Foo<Bar>
-fn parse_namespace(i: &str) -> IResult<&str, Namespace> {
+fn parse_namespace(i: &str) -> IResult<&str, Namespace<'_>> {
     let (i, ident) = parse_plain_ident(i)?;
     let (i, generic) = opt(parse_generic_param)(i)?;
 
@@ -109,12 +109,6 @@ fn parse_arguments<'a>(i: &'a str) -> IResult<&'a str, Vec<Type<'a>>> {
     Ok((i, idents))
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct EmbeddedPrefix<'a> {
-    generic: Option<Vec<Type<'a>>>,
-    ident: &'a str,
-}
-
 fn parse_type0<'a>(i: &'a str) -> IResult<&'a str, Namespaces<'a>> {
     // generic prefix
     let (i, _gen_prefix) = opt(parse_generic_param)(i)?;
@@ -190,7 +184,7 @@ impl<'a> TypeEnumerator<'a> for MethodPart<'a> {
     }
 }
 
-fn parse_method_part<'a>(i: &'a str) -> IResult<&str, MethodPart> {
+fn parse_method_part<'a>(i: &'a str) -> IResult<&'a str, MethodPart<'a>> {
     let (i, _) = tag("::")(i)?;
 
     let (i, _method_ident) = parse_type(i)?;
@@ -256,7 +250,7 @@ impl<'a> TypeEnumerator<'a> for MethodSignature<'a> {
     }
 }
 
-fn parse_signature0<'a>(i: &'a str) -> IResult<&str, Signature<'a>> {
+fn parse_signature0<'a>(i: &'a str) -> IResult<&'a str, Signature<'a>> {
     let (i, ret_ty) = parse_type(i)?;
 
     if i.len() == 0 {

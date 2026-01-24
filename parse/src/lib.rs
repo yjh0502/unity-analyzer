@@ -371,7 +371,7 @@ fn parse_yaml_embed_pair(i: &str) -> nom::IResult<&str, (&str, &str)> {
     Ok((i, (key, value)))
 }
 
-fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
+fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue<'_>> {
     // example
     // {a: 1, b: 2}\n
     let (i, (_, vec, _)) = nom::sequence::tuple((
@@ -383,28 +383,28 @@ fn parse_yaml_embed_value0(i: &str) -> nom::IResult<&str, LineValue> {
     Ok((i, LineValue::Map(vec)))
 }
 
-fn parse_yaml_str_value(i: &str) -> nom::IResult<&str, LineValue> {
+fn parse_yaml_str_value(i: &str) -> nom::IResult<&str, LineValue<'_>> {
     // example
     // foo bar baz - baz\n
     let (i, value) = not_line_ending(i)?;
     Ok((i, LineValue::Str(value)))
 }
 
-fn parse_yaml_embed_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
+fn parse_yaml_embed_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue<'_>)> {
     // example
     // {a: 1, b: 2}\n
     let (i, value) = parse_yaml_embed_value0(i)?;
     Ok((i, (None, value)))
 }
 
-fn parse_yaml_valueonly_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
+fn parse_yaml_valueonly_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue<'_>)> {
     // example
     // foobarbaz\n
     let (i, value) = take_while(key_char)(i)?;
     Ok((i, (Some(value), LineValue::None)))
 }
 
-fn parse_yaml_keyvalue_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue)> {
+fn parse_yaml_keyvalue_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineValue<'_>)> {
     // example
     // foobarbaz: hello world\n
     // foobarbaz: {x: 1, y: 2}\n
@@ -417,7 +417,7 @@ fn parse_yaml_keyvalue_line(i: &str) -> nom::IResult<&str, (Option<&str>, LineVa
     Ok((i, (Some(key), value)))
 }
 
-fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
+fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line<'_>> {
     use nom::error::*;
 
     if i.len() > 5 && &i[0..5] == "\n--- " {
@@ -439,7 +439,7 @@ fn parse_yaml_like(i: &str) -> nom::IResult<&str, Line> {
     Ok((i, Line { indent, key, value }))
 }
 
-fn parse_yaml_object(i: &str) -> nom::IResult<&str, UnityYamlObject> {
+fn parse_yaml_object(i: &str) -> nom::IResult<&str, UnityYamlObject<'_>> {
     let (i, (header, lines)) =
         nom::sequence::tuple((parse_object_header, nom::multi::many1(parse_yaml_like)))(i)?;
 
@@ -455,7 +455,7 @@ fn parse_file_header(i: &str) -> nom::IResult<&str, ()> {
     Ok((i, ()))
 }
 
-fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile> {
+fn parse_unity_yaml<'a>(i: &'a str) -> nom::IResult<&'a str, UnityYamlFile<'a>> {
     let (i, (_header, objects, _)) = all_consuming(nom::sequence::tuple((
         parse_file_header,
         nom::multi::many1(parse_yaml_object),

@@ -175,7 +175,7 @@ impl AssetIndex {
 
         let files_list = {
             use rand::seq::SliceRandom;
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let mut files_list = list_files(&assets_dir)?;
             files_list.shuffle(&mut rng);
             files_list
@@ -585,7 +585,7 @@ impl AssetIndex {
         }
     }
 
-    pub fn asset_by_guid(&self, guid: &str) -> Option<&AssetFile> {
+    pub fn asset_by_guid(&self, guid: &str) -> Option<&AssetFile<'_>> {
         let path = self.asset_guids.get(guid)?;
         let asset = self.assets.get(path)?;
         Some(asset)

@@ -38,7 +38,7 @@ impl YamlBuf {
         self.data.len()
     }
 
-    pub fn iter(&self) -> YamlIter {
+    pub fn iter(&self) -> YamlIter<'_> {
         YamlIter {
             s: self.data.as_str(),
         }
@@ -300,14 +300,14 @@ impl<'a> AssetFile<'a> {
         meta.asset_bundle_name()
     }
 
-    pub fn object_by_file_id(&self, file_id: i64) -> Option<&Object> {
+    pub fn object_by_file_id(&self, file_id: i64) -> Option<&Object<'_>> {
         trace!("object_by_file_id id={}", file_id);
         let idx = self.file_id_indices[&file_id];
         let obj = &self.objects[idx];
         Some(obj)
     }
 
-    pub fn gameobject(&self, file_id: i64) -> Option<&Object> {
+    pub fn gameobject(&self, file_id: i64) -> Option<&Object<'_>> {
         let obj = self.object_by_file_id(file_id)?;
         let go_file_id = obj.gameobject()?;
         if go_file_id == 0 {
@@ -317,7 +317,7 @@ impl<'a> AssetFile<'a> {
         self.object_by_file_id(go_file_id)
     }
 
-    pub fn transform(&self, file_id: i64) -> Option<&Object> {
+    pub fn transform(&self, file_id: i64) -> Option<&Object<'_>> {
         trace!("transform file_id={}", file_id);
         let go = self.gameobject(file_id)?;
         trace!("go={:?}", go.header.file_id);

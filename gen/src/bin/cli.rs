@@ -242,6 +242,7 @@ pub enum Root {{
 }
 
 fn cmd_danglings(v: CommandDanglings) -> Result<()> {
+    let _ = v.conservative;
     info!("include={:?}", v.include);
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
 
@@ -411,6 +412,7 @@ fn cmd_assetbundle(v: CommandAssetBundle) -> Result<()> {
 }
 
 fn cmd_parse(v: CommandParse) -> Result<()> {
+    let _ = v.conservative;
     let sw = Stopwatch::start_new();
 
     let idx = assetindex::AssetIndex::from_path(&v.dir)?;
